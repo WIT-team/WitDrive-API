@@ -84,6 +84,7 @@ namespace WitDrive
             });
 
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IFilesService, FilesService>();
             services.AddAutoMapper(typeof(AuthService).Assembly);
             services.AddControllers();
         }
