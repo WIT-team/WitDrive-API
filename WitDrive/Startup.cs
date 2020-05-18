@@ -91,7 +91,10 @@ namespace WitDrive
             services.AddScoped<IEmailSender, EmailSender>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddAutoMapper(typeof(AuthService).Assembly);
-            services.AddControllers();
+            //services.AddControllers();
+            //services.AddMvcCore().AddRazorViewEngine();
+            //services.AddMvc(option => option.EnableEndpointRouting = false);
+            services.AddControllersWithViews();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -121,7 +124,7 @@ namespace WitDrive
             }
 
             //app.UseHttpsRedirection();
-
+            //app.UseMvc();
             app.UseRouting();
 
             app.UseAuthentication();
@@ -130,11 +133,11 @@ namespace WitDrive
 
             app.UseCors(x => x.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 
-
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();
             });
+
         }
     }
 }
