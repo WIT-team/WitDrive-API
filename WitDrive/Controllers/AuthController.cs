@@ -11,6 +11,8 @@ using WitDrive.Dto;
 using WitDrive.Infrastructure.Helpers;
 using WitDrive.Interfaces;
 using WitDrive.Models;
+using MDBFS_Lib;
+using WitDrive.Data.Configs;
 
 namespace WitDrive.Controllers
 {
@@ -24,6 +26,7 @@ namespace WitDrive.Controllers
         private readonly IAuthService service;
         private readonly UserManager<User> userManager;
         private readonly SignInManager<User> signInManager;
+        private readonly FileRepository repo;
 
         public AuthController(IConfiguration config, IMapper mapper, IAuthService service,
             UserManager<User> userManager, SignInManager<User> signInManager)
@@ -33,6 +36,7 @@ namespace WitDrive.Controllers
             this.service = service;
             this.userManager = userManager;
             this.signInManager = signInManager;
+            this.repo = new FileRepository(config.GetConnectionString("MongoDbConnection"));
         }
 
         [HttpPost("login")]
@@ -78,7 +82,12 @@ namespace WitDrive.Controllers
 
             if (result.Succeeded)
             {
-                return StatusCode(201);
+                var usr = await userManager.FindByNameAsync(newUser.UserName);
+                var res = await repo.InitializeUserAsyncReturnCode(Convert.ToString(usr.Id));
+                if (res.success)
+                {
+                    return StatusCode(201);
+                }
             }
             return BadRequest(result.Errors);
         }
