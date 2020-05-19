@@ -82,7 +82,8 @@ namespace WitDrive.Controllers
             if (result.Succeeded)
             {
                 var usr = await userManager.FindByNameAsync(newUser.UserName);
-                if (await repo.InitializeUserAsync(Convert.ToString(usr.Id)))
+                var res = await repo.InitializeUserAsyncReturnCode(Convert.ToString(usr.Id));
+                if (res.success)
                 {
                     return StatusCode(201);
                 }
