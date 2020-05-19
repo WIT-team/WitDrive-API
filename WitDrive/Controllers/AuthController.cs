@@ -12,6 +12,7 @@ using WitDrive.Infrastructure.Helpers;
 using WitDrive.Interfaces;
 using WitDrive.Models;
 using MDBFS_Lib;
+using WitDrive.Data.Configs;
 
 namespace WitDrive.Controllers
 {
@@ -35,7 +36,7 @@ namespace WitDrive.Controllers
             this.service = service;
             this.userManager = userManager;
             this.signInManager = signInManager;
-            this.repo = new FileRepository("mongodb+srv://App:8aOnnxaohkXlFyZn@witdbcluster0-cchqy.mongodb.net/test?retryWrites=true&w=majority");
+            this.repo = new FileRepository(config.GetConnectionString("MongoDbConnection"));
         }
 
         [HttpPost("login")]

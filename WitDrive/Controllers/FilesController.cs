@@ -10,6 +10,7 @@ using WitDrive.Interfaces;
 using MDBFS_Lib;
 using System.Net.Http;
 using System.Net;
+using Microsoft.Extensions.Configuration;
 
 namespace WitDrive.Controllers
 {
@@ -18,12 +19,14 @@ namespace WitDrive.Controllers
     [Authorize]
     public class FilesController : ControllerBase
     {
+        private readonly IConfiguration config;
         private readonly IFilesService filesService;
         private readonly FileRepository repo;
-        public FilesController(IFilesService filesService)
+        public FilesController(IFilesService filesService, IConfiguration config)
         {
-            this.repo = new FileRepository("mongodb+srv://App:8aOnnxaohkXlFyZn@witdbcluster0-cchqy.mongodb.net/test?retryWrites=true&w=majority");
+            this.config = config;
             this.filesService = filesService;
+            this.repo = new FileRepository(config.GetConnectionString("MongoDbConnection"));
         }
 
         [HttpPost("upload")]
