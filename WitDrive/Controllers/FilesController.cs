@@ -85,6 +85,42 @@ namespace WitDrive.Controllers
             return BadRequest("Failed to download file");
         }
 
+        [HttpPatch("share/{fileId}")]
+        public async Task<IActionResult> EnableFileSharing(int userId, string fileId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+
+            var res = await repo.EnableFileSharingAsync(Convert.ToString(userId), fileId);
+
+            if (res.success)
+            {
+                return Ok();
+            }
+
+            return BadRequest("Failed to share file");
+        }
+
+        [HttpPatch("disable-sharing/{fileId}")]
+        public async Task<IActionResult> DisableFileSharing(int userId, string fileId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+
+            var res = await repo.DisableFileSharingAsyncReturnCode(Convert.ToString(userId), fileId);
+
+            if (res.success)
+            {
+                return Ok();
+            }
+
+            return BadRequest("Failed to disable file sharing");
+        }
+
         [HttpDelete("{fileId}")]
         public async Task<IActionResult> FileDelete(int userId, string fileId)
         {
