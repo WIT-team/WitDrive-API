@@ -29,6 +29,24 @@ namespace WitDrive.Controllers
             this.repo = new FileRepository(config.GetConnectionString("MongoDbConnection"));
         }
 
+        [HttpGet("root")]
+        public async Task<IActionResult> GetRootDir(int userId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+
+            var res = await repo.GetRootDirectoryAsync(Convert.ToString(userId));
+
+            if (res.success)
+            {
+                return Ok(res.result);
+            }
+
+            return BadRequest("Failed to retrieve root data");
+        }
+
         [HttpPost("upload")]
         public async Task<IActionResult> FileUpload(int userId, string directoryId, [FromForm] IFormFile file)
         {
@@ -61,7 +79,7 @@ namespace WitDrive.Controllers
             {
                 string fileName = res.result.Value.Key;
                 byte[] data = res.result.Value.Value;
-                return File(data, MimeTypes.GetMimeType(fileName));
+                return File(data, MimeTypes.GetMimeType(fileName), fileName);
             }
 
             return BadRequest("Failed to download file");
