@@ -63,47 +63,29 @@ namespace WitDrive.Controllers
         //    return Ok();
         //}
 
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> ResetPasswordxD(ResetPasswordDto resetPasswordModel)
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPasswordxD([FromQuery] ResetPasswordDto resetPasswordDto)
         {
-            if (!ModelState.IsValid)
-                return View(resetPasswordModel);
-
-            var user = await userManager.FindByEmailAsync(resetPasswordModel.Email);
+            var user = await userManager.FindByEmailAsync(resetPasswordDto.Email);
             if (user == null)
-                RedirectToAction(nameof(ResetPasswordConfirmation));
-
-            var resetPassResult = await userManager.ResetPasswordAsync(user, resetPasswordModel.Token, resetPasswordModel.Password);
-            if (!resetPassResult.Succeeded)
             {
-                foreach (var error in resetPassResult.Errors)
-                {
-                    ModelState.TryAddModelError(error.Code, error.Description);
-                }
-
-                return View();
+                return NotFound();
             }
 
-            return RedirectToAction(nameof(ResetPasswordConfirmation));
-        }
-        public IActionResult ForgotPasswordConfirmation()
-        {
-            return View();
-        }
+            var result = await userManager.ResetPasswordAsync(user, resetPasswordDto.Token, resetPasswordDto.Password);
+            if (!result.Succeeded)
+            {
+                return BadRequest(result.Errors);
+            }
 
-        [HttpGet]
-        public IActionResult ResetPasswordConfirmation()
-        {
-            return View();
+            return Ok();
         }
-
 
         [HttpGet("reset-password-model", Name = "ResetPasswordModel")]
         public IActionResult ResetPassword(string token, string email)
         {
             var model = new ResetPasswordDto { Token = token, Email = email };
-            return View(model);
+            return Ok(model);
         }
 
     }
