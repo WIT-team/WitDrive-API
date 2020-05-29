@@ -97,7 +97,7 @@ namespace WitDrive.Controllers
 
             if (res.success)
             {
-                return Ok();
+                return Ok(res.result);
             }
 
             return BadRequest("Failed to share file");
@@ -138,5 +138,24 @@ namespace WitDrive.Controllers
 
             return BadRequest("Failed to delete file");
         }
+
+        [HttpGet("get-shared-list")]
+        public async Task<IActionResult> GetSharedList(int userId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+
+            var res = await repo.GetSharedLisAsyncReturnCode(Convert.ToString(userId));
+
+            if (res.success)
+            {
+                return Ok(res.result);
+            }
+
+            return BadRequest("Failed to get shared list");
+        }
+
     }
 }
