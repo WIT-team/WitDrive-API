@@ -158,5 +158,23 @@ namespace WitDrive.Controllers
             return BadRequest("Failed to get shared list");
         }
 
+        [HttpGet("shareId")]
+        public async Task<IActionResult> GetSharedFile(int userId, string shareId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+
+            var res = await repo.GetFileFromShareAsync(Convert.ToString(userId), shareId);
+
+            if (res.success)
+            {
+                return Ok(res.result);
+            }
+
+            return BadRequest("Failed to retrieve file info");
+        }
+
     }
 }
