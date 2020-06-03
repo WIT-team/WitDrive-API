@@ -22,6 +22,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using WitDrive.Data;
+using WitDrive.Data.Configs;
 using WitDrive.Infrastructure.Extensions;
 using WitDrive.Interfaces;
 using WitDrive.Models;
@@ -82,7 +83,12 @@ namespace WitDrive
             {
                 opt.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
             });
+            var emailConfig = Configuration
+               .GetSection("EmailConfiguration")
+               .Get<EmailConfiguration>();
+            services.AddSingleton(emailConfig);
 
+            services.AddScoped<IEmailSender, EmailSender>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IFilesService, FilesService>();
             services.AddAutoMapper(typeof(AuthService).Assembly);
@@ -117,7 +123,7 @@ namespace WitDrive
             }
 
             //app.UseHttpsRedirection();
-
+            //app.UseMvc();
             app.UseRouting();
 
             app.UseAuthentication();
@@ -126,11 +132,11 @@ namespace WitDrive
 
             app.UseCors(x => x.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 
-
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();
             });
+
         }
     }
 }
