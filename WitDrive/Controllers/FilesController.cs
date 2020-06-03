@@ -85,6 +85,7 @@ namespace WitDrive.Controllers
             return BadRequest("Failed to download file");
         }
 
+
         [HttpPatch("share/{fileId}")]
         public async Task<IActionResult> EnableFileSharing(int userId, string fileId)
         {
@@ -97,7 +98,7 @@ namespace WitDrive.Controllers
 
             if (res.success)
             {
-                return Ok();
+                return Ok(res.result);
             }
 
             return BadRequest("Failed to share file");
@@ -138,5 +139,42 @@ namespace WitDrive.Controllers
 
             return BadRequest("Failed to delete file");
         }
+
+        [HttpGet("get-shared-list")]
+        public async Task<IActionResult> GetSharedList(int userId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+
+            var res = await repo.GetSharedLisAsyncReturnCode(Convert.ToString(userId));
+
+            if (res.success)
+            {
+                return Ok(res.result);
+            }
+
+            return BadRequest("Failed to get shared list");
+        }
+
+        [HttpGet("shareId")]
+        public async Task<IActionResult> GetSharedFile(int userId, string shareId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+
+            var res = await repo.GetFileFromShareAsync(Convert.ToString(userId), shareId);
+
+            if (res.success)
+            {
+                return Ok(res.result);
+            }
+
+            return BadRequest("Failed to retrieve file info");
+        }
+
     }
 }
