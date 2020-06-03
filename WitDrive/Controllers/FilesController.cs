@@ -158,7 +158,7 @@ namespace WitDrive.Controllers
             return BadRequest("Failed to get shared list");
         }
 
-        [HttpGet("shareId")]
+        [HttpGet("get-shared-file/{shareId}")]
         public async Task<IActionResult> GetSharedFile(int userId, string shareId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
