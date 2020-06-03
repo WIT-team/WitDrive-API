@@ -91,9 +91,6 @@ namespace WitDrive
             services.AddScoped<IEmailSender, EmailSender>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddAutoMapper(typeof(AuthService).Assembly);
-            //services.AddControllers();
-            //services.AddMvcCore().AddRazorViewEngine();
-            //services.AddMvc(option => option.EnableEndpointRouting = false);
             services.AddControllersWithViews();
         }
 
