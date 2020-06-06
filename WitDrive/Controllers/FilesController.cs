@@ -85,6 +85,26 @@ namespace WitDrive.Controllers
             return BadRequest("Failed to download file");
         }
 
+        //[HttpPost("download/{fileId}")]
+        //public async Task<IActionResult> FileDownloadTwo(int userId, string fileId)
+        //{
+        //    if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+        //    {
+        //        return Unauthorized();
+        //    }
+
+        //    MDBFS_Lib.Util.AsyncResult<KeyValuePair<string, byte[]>?> res = await repo.DownloadFileAsync(Convert.ToString(userId), fileId);
+
+        //    if (res.success)
+        //    {
+        //        string fileName = res.result.Value.Key;
+        //        byte[] data = res.result.Value.Value;
+        //        return File(data, MimeTypes.GetMimeType(fileName), fileName);
+        //    }
+
+        //    return BadRequest("Failed to download file");
+        //}
+
 
         [HttpPatch("share/{fileId}")]
         public async Task<IActionResult> EnableFileSharing(int userId, string fileId)
