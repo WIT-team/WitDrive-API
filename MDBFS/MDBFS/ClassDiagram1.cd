@@ -1,0 +1,251 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1">
+  <Class Name="MDBFS.Exceptions.MbdfsNotDirectoryException" Collapsed="true">
+    <Position X="24.75" Y="1.75" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Exceptions\MBDFSNotDirectoryException.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Exceptions.MdbfsDuplicateKeyException" Collapsed="true">
+    <Position X="17" Y="1.75" Width="2.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Exceptions\MDBFSDuplicateKeyException.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Exceptions.MdbfsElementDoesNotExistException" Collapsed="true">
+    <Position X="19.75" Y="1.75" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Exceptions\MDBFSElementDoesNotExistException.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Exceptions.MdbfsNotFileException" Collapsed="true">
+    <Position X="22.25" Y="1.75" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Exceptions\MDBFSNotFileException.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Filesystem.AccessControl.Models.Group">
+    <Position X="24.5" Y="5.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAABAAAQAAAAAAAAAAAAEAAAAAAA=</HashCode>
+      <FileName>Filesystem\AccessControl\Models\Group.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Filesystem.AccessControl.Models.User">
+    <Position X="22.75" Y="5.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAABAAEQBAAAAAAAAAAAEAAAAAAAAAAAA=</HashCode>
+      <FileName>Filesystem\AccessControl\Models\User.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Filesystem.AccessControl.AccessControlClient">
+    <Position X="4" Y="5.75" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>IAEAAAAAFQBAAIAAAQAAQKwAAABEQMEAEAAAAABAEAQ=</HashCode>
+      <FileName>Filesystem\AccessControl\AccessControlClient.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Field Name="_directories" />
+      <Field Name="_elements" />
+      <Field Name="_files" />
+      <Field Name="_groups" />
+      <Field Name="_users" />
+    </ShowAsAssociation>
+  </Class>
+  <Class Name="MDBFS.FileSystem.BinaryStorage.Models.Chunk">
+    <Position X="26.25" Y="5.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAIAAAAAAA=</HashCode>
+      <FileName>Filesystem\BinaryStorage\Models\Chunk.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.FileSystem.BinaryStorage.Models.ChunkMap">
+    <Position X="12" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAIAAAgAAAAAAAAABAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Filesystem\BinaryStorage\Models\ChunkMap.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.FileSystem.BinaryStorage.Streams.BinaryDownloadStream">
+    <Position X="10.75" Y="4" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>AAEgAAAgSCAQYIAwGAgAAABgAUAQoEGgIEAAABOYYCA=</HashCode>
+      <FileName>Filesystem\BinaryStorage\Streams\BinaryDownloadStream.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Field Name="_chunks" />
+      <Field Name="_map" />
+      <Field Name="_nrwl" />
+    </ShowAsAssociation>
+  </Class>
+  <Class Name="MDBFS.FileSystem.BinaryStorage.Streams.BinaryUploadStream">
+    <Position X="18.5" Y="4" Width="1.75" />
+    <TypeIdentifier>
+      <HashCode>AAEiCAAgQCAQYIAwGgAAAABgAAARIEGgIEgQABGYYCA=</HashCode>
+      <FileName>Filesystem\BinaryStorage\Streams\BinaryUploadStream.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Field Name="_map" />
+      <Field Name="_maps" />
+      <Field Name="_nrwl" />
+    </ShowAsAssociation>
+  </Class>
+  <Class Name="MDBFS.FileSystem.BinaryStorage.BinaryStorageClient">
+    <Position X="8.5" Y="14.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>QAARAAAgAEAAAACAMAAUAAggAAgAIAARAAEAABCAAAA=</HashCode>
+      <FileName>Filesystem\BinaryStorage\BinaryStorageClient.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Field Name="_maps" />
+      <Field Name="_chunks" />
+      <Field Name="_namedReaderWriterLock" />
+    </ShowAsAssociation>
+  </Class>
+  <Class Name="MDBFS.Filesystem.Models.Element">
+    <Position X="21" Y="5.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAgEAAABAACAQAEAAAAEQAAQAAgAAEAAA=</HashCode>
+      <FileName>Filesystem\Models\Element.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Filesystem.Streams.FileDownloadStream">
+    <Position X="16" Y="4" Width="1.75" />
+    <TypeIdentifier>
+      <HashCode>AAEgAAAgQCAQQIAwGAgAAABgAAAQoEAgABAAAAGIcCA=</HashCode>
+      <FileName>Filesystem\Streams\FileDownloadStream.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Field Name="_bds" />
+      <Field Name="_file" />
+    </ShowAsAssociation>
+  </Class>
+  <Class Name="MDBFS.Filesystem.Streams.FileUploadStream">
+    <Position X="13.75" Y="4" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAEgAAAgRCAQwIAwGAgAAABgAAAQIEAgIBAAAAGIcCA=</HashCode>
+      <FileName>Filesystem\Streams\FileUploadStream.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Field Name="_bus" />
+      <Field Name="_elements" />
+      <Field Name="_file" />
+    </ShowAsAssociation>
+  </Class>
+  <Class Name="MDBFS.Filesystem.Directories">
+    <Position X="0.75" Y="9.5" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAEAACBABIAAICBAAAADBAgQAgIIAEAAAgAAAAAAkAE=</HashCode>
+      <FileName>Filesystem\Directories.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Filesystem.ElementSearchQuery">
+    <Position X="30.5" Y="0.5" Width="1.75" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAgEAAABAACAQAEAAAAAQAAAAAgAAEAAA=</HashCode>
+      <FileName>Filesystem\ElementSearchQuery.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Filesystem.Files">
+    <Position X="0.5" Y="0.5" Width="2.5" />
+    <TypeIdentifier>
+      <HashCode>ACAAAABABIESgABAAAgShAAAIgAAAEIAAgAAIIgAgAA=</HashCode>
+      <FileName>Filesystem\Files.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Filesystem.FileSystemClient">
+    <Position X="0.75" Y="7" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAEIA=</HashCode>
+      <FileName>Filesystem\FileSystemClient.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Property Name="AccessControl" />
+      <Property Name="Directories" />
+      <Property Name="Files" />
+    </ShowAsAssociation>
+  </Class>
+  <Class Name="MDBFS.Misc.CustomReaderWriterLock">
+    <Position X="28.5" Y="0.5" Width="1.75" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAEAAAAEAAAAAAAAAEAAAAAAAAAAAAAAgGA=</HashCode>
+      <FileName>Misc\CustomReaderWriterLock.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MDBFS.Misc.NamedReaderWriterLock">
+    <Position X="14.5" Y="12.75" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAEAAEAEAAAAAAAAAAAAAAAAAAAAAAAAgCA=</HashCode>
+      <FileName>Misc\NamedReaderWriterLock.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Field Name="_rwls" />
+    </ShowAsAssociation>
+  </Class>
+  <Class Name="System.IO.Stream" Collapsed="true">
+    <Position X="14.75" Y="1.75" Width="1.5" />
+    <TypeIdentifier />
+    <Lollipop Position="0.2" />
+  </Class>
+  <Class Name="System.Collections.Generic.Dictionary&lt;TKey, TValue&gt;">
+    <Position X="11.5" Y="15.5" Width="2" />
+    <NestedTypes>
+      <Class Name="System.Collections.Generic.Dictionary&lt;TKey, TValue&gt;.Enumerator" Collapsed="true">
+        <TypeIdentifier />
+        <Lollipop Position="0.2" />
+      </Class>
+      <Class Name="System.Collections.Generic.Dictionary&lt;TKey, TValue&gt;.KeyCollection" Collapsed="true">
+        <TypeIdentifier />
+        <Lollipop Position="0.2" />
+      </Class>
+      <Class Name="System.Collections.Generic.Dictionary&lt;TKey, TValue&gt;.ValueCollection" Collapsed="true">
+        <TypeIdentifier />
+        <Lollipop Position="0.2" />
+      </Class>
+    </NestedTypes>
+    <TypeIdentifier />
+    <Lollipop Position="0.2" />
+  </Class>
+  <Class Name="System.Exception" Collapsed="true">
+    <Position X="21.25" Y="0.5" Width="1.5" />
+    <TypeIdentifier />
+    <Lollipop Position="0.2" />
+  </Class>
+  <Interface Name="MongoDB.Driver.IMongoCollection&lt;TDocument&gt;">
+    <Position X="7.25" Y="3.5" Width="2.5" />
+    <TypeIdentifier />
+  </Interface>
+  <Enum Name="MDBFS.Filesystem.AccessControl.Models.EAccesControlFields">
+    <Position X="31.25" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAGAIAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Filesystem\AccessControl\Models\EAccesControlFields.cs</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="MDBFS.Filesystem.AccessControl.Models.EUserRole">
+    <Position X="29.5" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Filesystem\AccessControl\Models\User.cs</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="MDBFS.Filesystem.ESearchCondition">
+    <Position X="32.75" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAACAAAAAAEAAAAAAEAgAAAAAAAAAQAAA=</HashCode>
+      <FileName>Filesystem\ElementSearchQuery.cs</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="MDBFS.Misc.EMatadataKeys">
+    <Position X="33" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AIAAAAAAAAAAAAAAAAAAGABAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Misc\EMatadataKeys.cs</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>

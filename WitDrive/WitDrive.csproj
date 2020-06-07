@@ -28,5 +28,9 @@
     <PackageReference Include="Witdrive.MDBFS.Debug" Version="0.0.5.5" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\MDBFS\MDBFS\MDBFS.csproj" />
+  </ItemGroup>
+
 
 </Project>
