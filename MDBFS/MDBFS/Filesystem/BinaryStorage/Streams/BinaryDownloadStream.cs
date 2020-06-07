@@ -217,7 +217,6 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
         {
             if (_innerBuffer != null)
             {
-                _nrwl.ReleaseReaderLock(_map.ID);
                 _innerBuffer = null;
             }
         }

@@ -18,7 +18,7 @@ namespace MDBFS.Filesystem.Streams
         public FileDownloadStream(BinaryDownloadStream bds, IMongoCollection<Element> elements, string id)
         {
             var fSearch = elements.Find(x => x.ID == id && x.Removed == false).ToList();
-            if (fSearch.Count == 0) throw new MdbfsElementDoesNotExistException();
+            if (fSearch.Count == 0) throw new MdbfsElementNotFoundException();
             _file = fSearch.First();
             _bds = bds;
         }

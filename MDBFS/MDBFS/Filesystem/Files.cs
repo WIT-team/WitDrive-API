@@ -201,7 +201,7 @@ namespace MDBFS.Filesystem
                         // ReSharper disable once AccessToModifiedClosure
                         var parentSearch = _elements.Find(x => x.ID == e.ParentID).ToList();
                         if (!parentSearch.Any())
-                            throw new MdbfsElementDoesNotExistException("Parent element missing");
+                            throw new MdbfsElementNotFoundException("Parent element missing");
                         e = parentSearch.First();
                         originalLocationNames = e.Name + '/' + originalLocationNames;
                         originalLocationIDs = e.ID + '/' + originalLocationIDs;
@@ -242,7 +242,7 @@ namespace MDBFS.Filesystem
                         {
                             var parentSearch = (await _elements.FindAsync(x => x.ID == e.ParentID)).ToList();
                             if (!parentSearch.Any())
-                                throw new MdbfsElementDoesNotExistException(nameof(id));
+                                throw new MdbfsElementNotFoundException(nameof(id));
                             e = parentSearch.First();
                             originalLocationNames = e.Name + '/' + originalLocationNames;
                             originalLocationIDs = e.ID + '/' + originalLocationIDs;
@@ -526,35 +526,24 @@ namespace MDBFS.Filesystem
             return elem;
         }
 
-        public Element AddMetadata(string id, string fieldName, object fieldValue)
+        public Element SetCustomMetadata(string id, string fieldName, object fieldValue)
         {
-            if (((EMatadataKeys[]) Enum.GetValues(typeof(EMatadataKeys))).Any(name =>
-                fieldName == name.ToString())) return null;
-            if (((EAccesControlFields[]) Enum.GetValues(typeof(EAccesControlFields))).Any(name =>
-                fieldName == name.ToString())) return null;
             var search = _elements.Find(x => x.ID == id).ToList();
             if (!search.Any()) return null;
-            var elem = search.First();
-            elem.Metadata[fieldName] = fieldValue;
-            _elements.FindOneAndReplace(x => x.ID == id, elem);
-            return elem;
+            _elements.UpdateOne(x => x.ID == id,
+                Builders<Element>.Update.Set(x => x.CustomMetadata[fieldName], fieldValue));
+            List<Element> search2;
+            return (search2 = _elements.Find(x => x.ID == id).ToList()).Any() ? search2.First() : null;
         }
 
-        public Element RemoveMetadata(string id, string fieldName)
+        public Element RemoveCustomMetadata(string id, string fieldName)
         {
-            if (((EMatadataKeys[]) Enum.GetValues(typeof(EMatadataKeys))).Any(name =>
-                fieldName == name.ToString())) return null;
-            if (((EAccesControlFields[]) Enum.GetValues(typeof(EAccesControlFields))).Any(name =>
-                fieldName == name.ToString())) return null;
             var search = _elements.Find(x => x.ID == id).ToList();
             if (!search.Any()) return null;
-            var elem = search.First();
-            if (!elem.Metadata.ContainsKey(fieldName)) return elem;
-
-            elem.Metadata.Remove(fieldName);
-            _elements.FindOneAndReplace(x => x.ID == id, elem);
-
-            return elem;
+            _elements.UpdateOne(x => x.ID == id,
+                Builders<Element>.Update.PullFilter(x => x.CustomMetadata,x=>x.Key==fieldName));
+            List<Element> search2;
+            return (search2 = _elements.Find(x => x.ID == id).ToList()).Any() ? search2.First() : null;
         }
        
         public async  Task<Element> RenameAsync(string id, string newName)
@@ -567,35 +556,24 @@ namespace MDBFS.Filesystem
             return elem;
         }
 
-        public async Task<Element> AddMetadataAsync(string id, string fieldName, object fieldValue)
+        public async Task<Element> SetCustomMetadataAsync(string id, string fieldName, object fieldValue)
         {
-            if (((EMatadataKeys[]) Enum.GetValues(typeof(EMatadataKeys))).Any(name =>
-                fieldName == name.ToString())) return null;
-            if (((EAccesControlFields[]) Enum.GetValues(typeof(EAccesControlFields))).Any(name =>
-                fieldName == name.ToString())) return null;
-            var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
+            var search = _elements.Find(x => x.ID == id).ToList();
             if (!search.Any()) return null;
-            var elem = search.First();
-            elem.Metadata[fieldName] = fieldValue;
-            await _elements.FindOneAndReplaceAsync(x => x.ID == id, elem);
-            return elem;
+            await _elements.UpdateOneAsync(x => x.ID == id,
+                Builders<Element>.Update.Set(x => x.CustomMetadata[fieldName], fieldValue));
+            List<Element> search2;
+            return (search2 =(await _elements.FindAsync(x => x.ID == id)).ToList()).Any() ? search2.First() : null;
         }
 
-        public async Task<Element> RemoveMetadataAsync(string id, string fieldName)
+        public async Task<Element> RemoveCustomMetadataAsync(string id, string fieldName)
         {
-            if (((EMatadataKeys[]) Enum.GetValues(typeof(EMatadataKeys))).Any(name =>
-                fieldName == name.ToString())) return null;
-            if (((EAccesControlFields[]) Enum.GetValues(typeof(EAccesControlFields))).Any(name =>
-                fieldName == name.ToString())) return null;
-            var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
+            var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
             if (!search.Any()) return null;
-            var elem = search.First();
-            if (!elem.Metadata.ContainsKey(fieldName)) return elem;
-
-            elem.Metadata.Remove(fieldName);
-            await _elements.FindOneAndReplaceAsync(x => x.ID == id, elem);
-
-            return elem;
+            await _elements.UpdateOneAsync(x => x.ID == id,
+                Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));
+            List<Element> search2;
+            return (search2 = (await _elements.FindAsync(x => x.ID == id)).ToList()).Any() ? search2.First() : null;
         }
     }
 }

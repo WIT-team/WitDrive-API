@@ -229,7 +229,6 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
                 SaveBytesInDb(_writeBuffer);
                 _writeBuffer = null;
                 _maps.UpdateOne(x => x.ID == _map.ID, Builders<ChunkMap>.Update.Set(x => x.Removed, false));
-                _nrwl.ReleaseWriterLock(_map.ID);
             }
         }
 
@@ -240,7 +239,6 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
                 await SaveBytesInDbAsync(_writeBuffer);
                 _writeBuffer = null;
                 await _maps.UpdateOneAsync(x => x.ID == _map.ID, Builders<ChunkMap>.Update.Set(x => x.Removed, false));
-                _nrwl.ReleaseWriterLock(_map.ID);
             }
         }
 

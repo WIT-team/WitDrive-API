@@ -47,7 +47,7 @@ namespace MDBFS.Filesystem
         public Element Create(string parentId, string name)
         {
             var parSearch = _elements.Find(x => x.ID == parentId).ToList();
-            if (!parSearch.Any()) throw new MdbfsElementDoesNotExistException("Parent element not found");
+            if (!parSearch.Any()) throw new MdbfsElementNotFoundException("Parent element not found");
 
 
             var name1 = name;
@@ -165,7 +165,7 @@ namespace MDBFS.Filesystem
             {
                 var element1 = currElement;
                 var parentSearch = _elements.Find(x => x.ID == element1.ParentID).ToList();
-                if (!parentSearch.Any()) throw new MdbfsElementDoesNotExistException("Parent element missing");
+                if (!parentSearch.Any()) throw new MdbfsElementNotFoundException("Parent element missing");
                 currElement = parentSearch.First();
                 originalLocationNames = currElement.Name + '/' + originalLocationNames;
                 originalLocationIDs = currElement.ID + '/' + originalLocationIDs;
@@ -282,7 +282,7 @@ namespace MDBFS.Filesystem
             return elem;
         }
 
-        public Element AddMetadata(string id, string fieldName, object fieldValue)
+        public Element SetCustomMetadata(string id, string fieldName, object fieldValue)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
             if (!search.Any()) return null;
@@ -292,17 +292,14 @@ namespace MDBFS.Filesystem
             return elem;
         }
 
-        public Element RemoveMetadata(string id, string fieldName)
+        public Element RemoveCustomMetadata(string id, string fieldName)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
             if (!search.Any()) return null;
-            var elem = search.First();
-            if (!elem.CustomMetadata.ContainsKey(fieldName)) return elem;
-
-            elem.CustomMetadata.Remove(fieldName);
-            _elements.FindOneAndReplace(x => x.ID == id, elem);
-
-            return elem;
+            _elements.UpdateOne(x => x.ID == id,
+                Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));
+            List<Element> search2;
+            return (search2 = _elements.Find(x => x.ID == id).ToList()).Any() ? search2.First() : null;
         }
         public IEnumerable<Element> Find(string searchRoot, ElementSearchQuery query)
         {
@@ -336,7 +333,7 @@ namespace MDBFS.Filesystem
         public async Task<Element> CreateAsync(string parentId, string name)
         {
             var parSearch = (await _elements.FindAsync(x => x.ID == parentId)).ToList();
-            if (!parSearch.Any()) throw new MdbfsElementDoesNotExistException("Parent element not found");
+            if (!parSearch.Any()) throw new MdbfsElementNotFoundException("Parent element not found");
 
 
             var name1 = name;
@@ -454,7 +451,7 @@ namespace MDBFS.Filesystem
             {
                 var element1 = currentElement;
                 var parentSearch =(await _elements.FindAsync(x => x.ID == element1.ParentID)).ToList();
-                if (!parentSearch.Any()) throw new MdbfsElementDoesNotExistException("Parent element missing");
+                if (!parentSearch.Any()) throw new MdbfsElementNotFoundException("Parent element missing");
                 currentElement = parentSearch.First();
                 originalLocationNames = currentElement.Name + '/' + originalLocationNames;
                 originalLocationIDs = currentElement.ID + '/' + originalLocationIDs;
@@ -576,7 +573,7 @@ namespace MDBFS.Filesystem
             return elem;
         }
 
-        public async Task<Element> AddMetadataAsync(string id, string fieldName, object fieldValue)
+        public async Task<Element> SetCustomMetadataAsync(string id, string fieldName, object fieldValue)
         {
             var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
             if (!search.Any()) return null;
@@ -586,17 +583,14 @@ namespace MDBFS.Filesystem
             return elem;
         }
 
-        public async Task<Element> RemoveMetadataAsync(string id, string fieldName)
+        public async Task<Element> RemoveCustomMetadataAsync(string id, string fieldName)
         {
             var search =(await  _elements.FindAsync(x => x.ID == id)).ToList();
             if (!search.Any()) return null;
-            var elem = search.First();
-            if (!elem.CustomMetadata.ContainsKey(fieldName)) return elem;
-
-            elem.CustomMetadata.Remove(fieldName);
-            await _elements.FindOneAndReplaceAsync(x => x.ID == id, elem);
-
-            return elem;
+            await _elements.UpdateOneAsync(x => x.ID == id,
+                Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));
+            List<Element> search2;
+            return (search2 =(await _elements.FindAsync(x => x.ID == id)).ToList()).Any() ? search2.First() : null;
         }
         public async Task<IEnumerable<Element>> FindAsync(string searchRoot, ElementSearchQuery query)
         {

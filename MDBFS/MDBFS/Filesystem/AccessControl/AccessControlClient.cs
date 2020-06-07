@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MDBFS.Filesystem.AccessControl.Models;
 using MDBFS.Filesystem.Models;
+using MDBFS.Misc;
 using MongoDB.Driver;
 using static MDBFS.Filesystem.AccessControl.Models.EAccesControlFields;
 
@@ -18,13 +19,14 @@ namespace MDBFS.Filesystem.AccessControl
 
         public AccessControlClient(IMongoDatabase database, IMongoCollection<Element> elements, Files files, Directories directories)
         {
+            if (database == null) throw new ArgumentNullException(nameof(database));
             _users = database.GetCollection<User>(nameof(MDBFS) + '.' + nameof(Filesystem) + '.' +
-                                                 nameof(AccessControl) +  nameof(_users));
+                                                  nameof(AccessControl) + nameof(_users));
             _groups = database.GetCollection<Group>(nameof(MDBFS) + '.' + nameof(Filesystem) + '.' +
-                                                   nameof(AccessControl) +  nameof(_groups));
-            this._elements = elements;
-            this._files = files;
-            this._directories = directories;
+                                                   nameof(AccessControl) + nameof(_groups));
+            this._elements = elements ?? throw new ArgumentNullException(nameof(elements));
+            this._files = files ?? throw new ArgumentNullException(nameof(files));
+            this._directories = directories ?? throw new ArgumentNullException(nameof(directories));
             if (!_users.Find(x => x.Username == "").Any()) _users.InsertOne(new User() { Username = "", Role = EUserRole.Admin, MemberOf = new List<string>(), RootDirectory = directories.Root });
             CreateAccessControl(directories.Root, "");
 
@@ -64,6 +66,7 @@ namespace MDBFS.Filesystem.AccessControl
             element.Metadata[nameof(OtherUsers)] = 0b00000000;
             element.Metadata[nameof(Groups)] = new Dictionary<string, byte>();
             element.Metadata[nameof(Users)] = new Dictionary<string, byte>();
+            element.Metadata[nameof(Tokens)] = new Dictionary<string, byte>();
             _elements.FindOneAndReplace(x => x.ID == id, element);
             return element;
         }
@@ -181,31 +184,6 @@ namespace MDBFS.Filesystem.AccessControl
             res.Members.Add(username);
             return res;
         }
-        public Group AddUserToGroupAddMisssing(string groupName, string username)
-        {
-            var search = _groups.Find(x => x.Name == groupName).ToList();
-            if (!search.Any()) return null;
-            var searchUsr = _users.Find(x => x.Username == username).ToList();
-            if (!searchUsr.Any())
-            {
-                var usr = new User()
-                {
-                    MemberOf = new List<string>(){groupName},
-                    Role = EUserRole.User,
-                    RootDirectory = "",
-                    Username = username,
-                };
-                _users.InsertOne(usr);
-            }
-            else
-            {
-                _users.UpdateOne(x => x.Username == username, Builders<User>.Update.Push(x => x.MemberOf, groupName));
-            }
-            _groups.UpdateOne(x => x.Name == groupName, Builders<Group>.Update.Push(x => x.Members, username));
-            var res = search.First();
-            res.Members.Add(username);
-            return res;
-        }
 
         public Group RemoveUserFromGroup(string groupName, string username)
         {
@@ -223,18 +201,34 @@ namespace MDBFS.Filesystem.AccessControl
             return res;
         }
 
+        public Element AuthorizeToken(string id, string token, bool read, bool write, bool execute)
+        {
+            var search = _elements.Find(x => x.ID == id).ToList();
+            if (!search.Any()) return null;
+            byte rights = 0;
+            if (read) rights = (byte)(rights | 0b00000100);
+            if (write) rights = (byte)(rights | 0b00000010);
+            if (execute) rights = (byte)(rights | 0b00000001);
+            var elem = search.First();
+            if (rights == 0) (elem.Metadata[nameof(Tokens)] as Dictionary<string, byte>).Remove(token);
+            else (elem.Metadata[nameof(Tokens)] as Dictionary<string, byte>)[token] = rights;
+            _elements.FindOneAndReplace(x => x.ID == id,elem);
+            return elem;
+        }
         public Element AuthorizeUser(string id, string username, bool changeRights, bool read, bool write, bool execute)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
             if (!search.Any()) return null;
-            var elem = search.First();
             byte rights = 0;
             if (changeRights) rights = (byte)(rights | 0b00001000);
             if (read) rights = (byte)(rights | 0b00000100);
             if (write) rights = (byte)(rights | 0b00000010);
             if (execute) rights = (byte)(rights | 0b00000001);
-            ((Dictionary<string, byte>)elem.Metadata[nameof(Users)])[username] = rights;
-            _elements.FindOneAndReplace(x => x.ID == elem.ID, elem);
+
+            var elem = search.First();
+            if (rights == 0) (elem.Metadata[nameof(Users)] as Dictionary<string, byte>).Remove(username);
+            else (elem.Metadata[nameof(Users)] as Dictionary<string, byte>)[username] = rights;
+            _elements.FindOneAndReplace(x => x.ID == id, elem);
             return elem;
         }
 
@@ -248,12 +242,14 @@ namespace MDBFS.Filesystem.AccessControl
             if (read) rights = (byte)(rights | 0b00000100);
             if (write) rights = (byte)(rights | 0b00000010);
             if (execute) rights = (byte)(rights | 0b00000001);
-            ((Dictionary<string, byte>)elem.Metadata[nameof(Groups)])[groupName] = rights;
-            _elements.FindOneAndReplace(x => x.ID == elem.ID, elem);
+            if (rights == 0) (elem.Metadata[nameof(Groups)] as Dictionary<string, byte>).Remove(groupName);
+            else (elem.Metadata[nameof(Groups)] as Dictionary<string, byte>)[groupName] = rights;
+            _elements.FindOneAndReplace(x => x.ID == id, elem);
             return elem;
         }
 
-        public bool CheckPermissions(string id, string username, bool changeRights, bool read, bool write, bool execute)
+
+        public bool CheckPermissionsWithUsername(string id, string username, bool changeRights, bool read, bool write, bool execute)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
             if (!search.Any()) throw new Exception("Element does not exist");
@@ -290,18 +286,41 @@ namespace MDBFS.Filesystem.AccessControl
 
             return true;
         }
+        public bool CheckPermissionsWithToken(string id, string token, bool changeRights, bool read, bool write, bool execute)
+        {
+            var search = _elements.Find(x => x.ID == id).ToList();
+            if (!search.Any()) throw new Exception("Element does not exist");
+            var elem = search.First();
+            var elemTokens = (Dictionary<string, byte>)elem.Metadata[nameof(Tokens)];
+            if (!elemTokens.ContainsKey(token)) return false;
+            byte rights = elemTokens[token];
+            if (changeRights)
+                if ((rights & 0b00001000) == 0)
+                    return false;
+            if (read)
+                if ((rights & 0b00000100) == 0)
+                    return false;
+            if (write)
+                if ((rights & 0b00000010) == 0)
+                    return false;
+            if (execute)
+                if ((rights & 0b00000001) == 0)
+                    return false;
 
-        public IEnumerable<Element> ModerateSearch(string username, IEnumerable<Element> searchResult) => searchResult.Where(element => CheckPermissions(element.ID, username, false, true, false, false)).ToList();
+            return true;
+        }
+
+        public IEnumerable<Element> ModerateSearch(string username, IEnumerable<Element> searchResult) => searchResult.Where(element => CheckPermissionsWithUsername(element.ID, username, false, true, false, false)).ToList();
 
         public long CalculateDiskUsage(string username)
         {
-            var search = _elements.Find(Builders<Element>.Filter.Where(x =>x.Type==1&& ((string)x.Metadata[nameof(OwnerId)])==username)).ToList();
+            var search = _elements.Find(Builders<Element>.Filter.Where(x => x.Type == 1 && ((string)x.Metadata[nameof(OwnerId)]) == username)).ToList();
             if (!search.Any()) return 0;
             long sum = 0;
             foreach (var e in search)
             {
 
-                sum += (long) e.Metadata["Length"];
+                sum += (long)e.Metadata["Length"];
             }
 
             return sum;

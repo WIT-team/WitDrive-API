@@ -6,5 +6,6 @@
         OtherUsers,
         Groups,
         Users,
+        Tokens,
     }
 }

@@ -10,5 +10,9 @@ namespace WitDrive.Interfaces
     public interface IFilesService
     {
         public byte[] ConvertToByteArray(IFormFile file);
+        void Add<T>(T entity) where T : class;
+        void Delete<T>(T entity) where T : class;
+        void Update<T>(T entity) where T : class;
+        Task<bool> SaveAll();
     }
 }

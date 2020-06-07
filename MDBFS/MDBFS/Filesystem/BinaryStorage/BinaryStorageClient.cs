@@ -265,9 +265,7 @@ namespace MDBFS.FileSystem.BinaryStorage
         public void Remove(string id)
         {
             if (id == null) throw new ArgumentNullException(nameof(id));
-            _namedReaderWriterLock.AcquireReaderLock(id);
             var search = _maps.Find(x => x.ID == id).ToList();
-            _namedReaderWriterLock.ReleaseReaderLock(id);
             if (search.Any())
             {
                 _namedReaderWriterLock.AcquireWriterLock(id);
@@ -280,14 +278,12 @@ namespace MDBFS.FileSystem.BinaryStorage
 
                 _maps.DeleteOne(x => x.ID == id);
             }
-            _namedReaderWriterLock.ReleaseWriterLock(id);
         }
         public async Task RemoveAsync(string id)
         {
             if (id == null) throw new ArgumentNullException(nameof(id));
             await _namedReaderWriterLock.AcquireReaderLockAsync(id);
             var search = _maps.Find(x => x.ID == id).ToList();
-            await _namedReaderWriterLock.ReleaseReaderLockAsync(id);
             if (search.Any())
             {
                 await _namedReaderWriterLock.AcquireWriterLockAsync(id);
@@ -300,7 +296,6 @@ namespace MDBFS.FileSystem.BinaryStorage
 
                 await _maps.DeleteOneAsync(x => x.ID == id);
             }
-            _namedReaderWriterLock.ReleaseWriterLock(id);
         }
     }
 }
