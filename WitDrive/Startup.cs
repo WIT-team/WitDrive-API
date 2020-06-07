@@ -124,6 +124,7 @@ namespace WitDrive
 
             //app.UseHttpsRedirection();
             //app.UseMvc();
+            //app.UseMvc();
             app.UseRouting();
 
             app.UseAuthentication();

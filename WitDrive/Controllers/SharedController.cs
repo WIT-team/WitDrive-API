@@ -27,6 +27,19 @@ namespace WitDrive.Controllers
             this.repo = new FileRepository(config.GetConnectionString("MongoDbConnection"));
         }
 
+        [HttpGet("file-info/{shareId}")]
+        public async Task<IActionResult> GetSharedFile(string shareId)
+        {
+            var res = await repo.GetFileFromShareAsync(null, shareId);
+
+            if (res.success)
+            {
+                return Ok(res.result);
+            }
+
+            return BadRequest("Failed to retrieve file info");
+        }
+
         [HttpGet("{shareId}")]
         public async Task<IActionResult> DownloadSharedFile(string shareId)
         {
