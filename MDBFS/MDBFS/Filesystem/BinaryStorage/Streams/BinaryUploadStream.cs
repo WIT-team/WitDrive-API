@@ -19,6 +19,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
         public string Id => _map.ID;
 
         private readonly NamedReaderWriterLock _nrwl;
+        private string _nrwlID;//todo: add to constructor
         private readonly IMongoCollection<Chunk> _chunks;
         private readonly IMongoCollection<ChunkMap> _maps;
         private ChunkMap _map;
@@ -28,8 +29,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
         public static (bool success, BinaryUploadStream stream) Open(IMongoCollection<ChunkMap> maps,
             IMongoCollection<Chunk> chunks, int maxChunkLenght, string id, NamedReaderWriterLock namedReaderWriterLock)
         {
-            if (id != null) {}
-            var (success, map) = CreateNewElement(maps, id);
+            var (success, map) = CreateNewElement(maps, id,namedReaderWriterLock);
             if (!success)
             {
                 return (false, null);
@@ -40,6 +40,8 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             {
                 _map = map
             };
+            stream._nrwlID = namedReaderWriterLock.AcquireWriterLock($"{nameof(Chunk)}.{id}");
+
             return (true, stream);
         }
 
@@ -47,7 +49,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             IMongoCollection<Chunk> chunks, int maxChunkLenght, string id, NamedReaderWriterLock namedReaderWriterLock)
         {
             if (id != null) {}
-            var (success, map) = await CreateNewElementAsync(maps, id);
+            var (success, map) = await CreateNewElementAsync(maps, id,namedReaderWriterLock);
             if (!success)
             {
                 return (false, null);
@@ -57,13 +59,14 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             {
                 _map = map
             };
-            await namedReaderWriterLock.AcquireWriterLockAsync(map.ID);
+            stream._nrwlID = await namedReaderWriterLock.AcquireWriterLockAsync($"{nameof(Chunk)}.{id}");
             return (true, stream);
         }
 
-        private static (bool success, ChunkMap map) CreateNewElement(IMongoCollection<ChunkMap> maps, string id)
+        private static (bool success, ChunkMap map) CreateNewElement(IMongoCollection<ChunkMap> maps, string id,NamedReaderWriterLock nrwl)
         {
             var map = new ChunkMap {ID = id, ChunksIDs = new List<string>(), Length = 0};
+            var lId = nrwl.AcquireReaderLock($"{nameof(ChunkMap)}.{id}");
             using var session = maps.Database.Client.StartSession();
             session.StartTransaction();
             try
@@ -77,6 +80,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
                     else
                     {
                         session.AbortTransaction();
+                        nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}",lId);
                         return (false, null);
                     }
                 }
@@ -84,42 +88,51 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
                 maps.InsertOne(map);
 
                 session.CommitTransaction();
+                nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId);
                 return (true, map);
             }
             catch
             {
-                // ignored
+                nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId);
             }
 
             session.AbortTransaction();
+            nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId);
             return (false, null);
         }
 
         private static async Task<(bool success, ChunkMap map)> CreateNewElementAsync(IMongoCollection<ChunkMap> maps,
-            string id)
+            string id, NamedReaderWriterLock nrwl)
         {
             var map = new ChunkMap {ID = id, ChunksIDs = new List<string>(), Length = 0};
+            var lId = await nrwl.AcquireReaderLockAsync($"{nameof(ChunkMap)}.{id}");
             using var session = await maps.Database.Client.StartSessionAsync();
             session.StartTransaction();
             try
             {
                 if (id != null)
                 {
-                    if (!(await maps.FindAsync(x => x.ID == id)).Any()) map.ID = id;
-                    else return (false, null);
+                    if (!await (await maps.FindAsync(x => x.ID == id)).AnyAsync()) map.ID = id;
+                    else
+                    {
+                        await nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId);
+                        return (false, null);
+                    }
                 }
 
                 await maps.InsertOneAsync(map);
 
-                session.CommitTransaction();
+                await session.CommitTransactionAsync();
+                await nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId);
                 return (true, map);
             }
             catch (Exception)
             {
-                // ignored
+                await nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId);
             }
 
-            session.AbortTransaction();
+            await session.AbortTransactionAsync();
+            await nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId);
             return (false, null);
         }
 
@@ -227,20 +240,14 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             if (_writeBuffer != null)
             {
                 SaveBytesInDb(_writeBuffer);
+                _nrwl.ReleaseLock($"{nameof(Chunk)}.{_map.ID}",_nrwlID);
                 _writeBuffer = null;
+                string lId = _nrwl.AcquireWriterLock($"{nameof(ChunkMap)}.{_map.ID}");
                 _maps.UpdateOne(x => x.ID == _map.ID, Builders<ChunkMap>.Update.Set(x => x.Removed, false));
+                _nrwl.ReleaseLock($"{nameof(ChunkMap)}.{_map.ID}",lId);
             }
         }
 
-        public new async Task FlushAsync()
-        {
-            if (_writeBuffer != null)
-            {
-                await SaveBytesInDbAsync(_writeBuffer);
-                _writeBuffer = null;
-                await _maps.UpdateOneAsync(x => x.ID == _map.ID, Builders<ChunkMap>.Update.Set(x => x.Removed, false));
-            }
-        }
 
         public new void Dispose()
         {
@@ -256,6 +263,10 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
 
 #pragma warning disable IDE0060
 #pragma warning disable CS8632
+        //public new async Task FlushAsync()
+        //{
+        //    throw new NotSupportedException();
+        //}
         public override int ReadTimeout
         {
             get => throw new NotSupportedException();

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using MDBFS.Exceptions;
+using MDBFS.Filesystem;
 using MDBFS.FileSystem.BinaryStorage.Models;
 using MDBFS.FileSystem.BinaryStorage.Streams;
 using MDBFS.Misc;
@@ -13,13 +14,13 @@ namespace MDBFS.FileSystem.BinaryStorage
 {
     public class BinaryStorageClient
     {
-        private readonly IMongoCollection<Chunk> _chunks;
-        private readonly IMongoCollection<ChunkMap> _maps;
+        public readonly IMongoCollection<Chunk> _chunks;
+        public readonly IMongoCollection<ChunkMap> _maps;
         private readonly int _bufforLength;
         private readonly int _maxChunkLenght;
-        private readonly NamedReaderWriterLock _namedReaderWriterLock;
+        private readonly NamedReaderWriterLock _nrwl;
 
-        public BinaryStorageClient(NamedReaderWriterLock namedReaderWriterLock, IMongoDatabase database,
+        public BinaryStorageClient(NamedReaderWriterLock nrwl, IMongoDatabase database,
             int bufforLength = 1024, int maxChunkLength = 1048576)
         {
             //set database
@@ -32,7 +33,7 @@ namespace MDBFS.FileSystem.BinaryStorage
 
             _bufforLength = bufforLength;
             _maxChunkLenght = maxChunkLength;
-            _namedReaderWriterLock = namedReaderWriterLock;
+            _nrwl = nrwl;
 
         }
 
@@ -46,35 +47,36 @@ namespace MDBFS.FileSystem.BinaryStorage
 
             return searchDeleted;
         }
+
         public BinaryUploadStream OpenUploadStream()
         {
             var (success, stream) =
-                BinaryUploadStream.Open(_maps, _chunks, _maxChunkLenght, null, _namedReaderWriterLock);
+                BinaryUploadStream.Open(_maps, _chunks, _maxChunkLenght, null, _nrwl);
             return success ? stream : null;
         }
 
         public BinaryUploadStream OpenUploadStream(string id)
         {
             var (success, stream) =
-                BinaryUploadStream.Open(_maps, _chunks, _maxChunkLenght, id, _namedReaderWriterLock);
+                BinaryUploadStream.Open(_maps, _chunks, _maxChunkLenght, id, _nrwl);
             return success ? stream : throw new MdbfsDuplicateKeyException("Document with specified ID already exists");
         }
 
         public async Task<BinaryUploadStream> OpenUploadStreamAsync()
         {
             var (success, stream) =
-                await BinaryUploadStream.OpenAsync(_maps, _chunks, _maxChunkLenght, null, _namedReaderWriterLock);
+                await BinaryUploadStream.OpenAsync(_maps, _chunks, _maxChunkLenght, null, _nrwl);
             return success ? stream : null;
         }
 
         public async Task<BinaryUploadStream> OpenUploadStreamAsync(string id)
         {
             var (success, stream) =
-                await BinaryUploadStream.OpenAsync(_maps, _chunks, _maxChunkLenght, id, _namedReaderWriterLock);
+                await BinaryUploadStream.OpenAsync(_maps, _chunks, _maxChunkLenght, id, _nrwl);
             return success ? stream : throw new MdbfsDuplicateKeyException("Document with specified ID already exists");
         }
 
-        public string  UploadFromStream(Stream stream)
+        public string UploadFromStream(Stream stream)
         {
             string id;
             using var binS = OpenUploadStream();
@@ -174,14 +176,14 @@ namespace MDBFS.FileSystem.BinaryStorage
         public BinaryDownloadStream OpenDownloadStream(string id)
         {
             var (success, stream) =
-                BinaryDownloadStream.Open(_maps, _chunks, _maxChunkLenght, id, _namedReaderWriterLock);
+                BinaryDownloadStream.Open(_maps, _chunks, _maxChunkLenght, id, _nrwl);
             return success ? stream : null;
         }
 
         public async Task<BinaryDownloadStream> OpenDownloadStreamAsync(string id)
         {
             var (success, stream) =
-                await BinaryDownloadStream.OpenAsync(_maps, _chunks, _maxChunkLenght, id, _namedReaderWriterLock);
+                await BinaryDownloadStream.OpenAsync(_maps, _chunks, _maxChunkLenght, id, _nrwl);
             return success ? stream : null;
         }
 
@@ -232,23 +234,38 @@ namespace MDBFS.FileSystem.BinaryStorage
 
         public string Duplicate(string id)
         {
+            var lId2 = _nrwl.AcquireWriterLock($"{nameof(ChunkMap)}.{id}");
+            var lId = _nrwl.AcquireReaderLock($"{nameof(Chunk)}.{id}");
             var mapSearch = _maps.Find(x => x.ID == id).ToList();
-            if (!mapSearch.Any()) return null; //not found
+            if (!mapSearch.Any())
+            {
+                _nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId2);
+                _nrwl.ReleaseLock($"{nameof(Chunk)}.{id}", lId);
+                return null;
+            } //not found
+
             var map = mapSearch.First();
             var nMap = new ChunkMap {ChunksIDs = new List<string>(), Length = map.Length};
             var chunksSearch = _chunks.Find(Builders<Chunk>.Filter.Where(x => map.ChunksIDs.Contains(x.ID)));
-            var nChunks = new List<Chunk>();
-            foreach (var ch in chunksSearch.ToEnumerable()) nChunks.Add(new Chunk {Bytes = ch.Bytes});
+            var nChunks = chunksSearch.ToEnumerable().Select(ch => new Chunk {Bytes = ch.Bytes}).ToList();
             _chunks.InsertMany(nChunks);
             nChunks.ForEach(x => nMap.ChunksIDs.Add(x.ID));
             _maps.InsertOne(nMap);
+            _nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId2);
+            _nrwl.ReleaseLock($"{nameof(Chunk)}.{id}", lId);
             return nMap.ID;
         }
 
         internal async Task<string> DuplicateAsync(string id)
         {
+            var lId2 = await _nrwl.AcquireWriterLockAsync($"{nameof(ChunkMap)}.{id}");
             var mapSearch = (await _maps.FindAsync(x => x.ID == id)).ToList();
-            if (!mapSearch.Any()) return null; //not found
+            if (!mapSearch.Any())
+            {
+                await _nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId2);
+                return null;
+            } //not found
+
             var map = mapSearch.First();
             var nMap = new ChunkMap {ChunksIDs = new List<string>(), Length = map.Length};
             var chunksSearch = await _chunks.FindAsync(Builders<Chunk>.Filter.Where(x => map.ChunksIDs.Contains(x.ID)));
@@ -259,43 +276,34 @@ namespace MDBFS.FileSystem.BinaryStorage
             await _chunks.InsertManyAsync(nChunks);
             nChunks.ForEach(x => nMap.ChunksIDs.Add(x.ID));
             await _maps.InsertOneAsync(nMap);
+            await _nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId2);
             return nMap.ID;
         }
 
         public void Remove(string id)
         {
             if (id == null) throw new ArgumentNullException(nameof(id));
+            var lId2 = _nrwl.AcquireWriterLock($"{nameof(ChunkMap)}.{id}");
             var search = _maps.Find(x => x.ID == id).ToList();
             if (search.Any())
             {
-                _namedReaderWriterLock.AcquireWriterLock(id);
                 _maps.UpdateOne(x => x.ID == id, Builders<ChunkMap>.Update.Set(x => x.Removed, true));
-                var map = search.First();
-                foreach (var chunkId in map.ChunksIDs)
-                {
-                    _chunks.DeleteOne(x => x.ID == chunkId);
-                }
-
-                _maps.DeleteOne(x => x.ID == id);
             }
+
+            _nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId2);
         }
+
         public async Task RemoveAsync(string id)
         {
             if (id == null) throw new ArgumentNullException(nameof(id));
-            await _namedReaderWriterLock.AcquireReaderLockAsync(id);
+            var lId2 = await _nrwl.AcquireWriterLockAsync($"{nameof(ChunkMap)}.{id}");
             var search = _maps.Find(x => x.ID == id).ToList();
             if (search.Any())
             {
-                await _namedReaderWriterLock.AcquireWriterLockAsync(id);
                 await _maps.UpdateOneAsync(x => x.ID == id, Builders<ChunkMap>.Update.Set(x => x.Removed, true));
-                var map = search.First();
-                foreach (var chunkId in map.ChunksIDs)
-                {
-                    await _chunks.DeleteOneAsync(x => x.ID == chunkId);
-                }
-
-                await _maps.DeleteOneAsync(x => x.ID == id);
             }
+
+            await _nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId2);
         }
     }
 }

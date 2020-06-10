@@ -24,7 +24,9 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
         public override bool CanRead => false;
 
         private readonly NamedReaderWriterLock _nrwl;
+        private string _nrwlID;//todo: add to constructor
         private readonly IMongoCollection<Chunk> _chunks;
+        private readonly IMongoCollection<ChunkMap> _maps;
         private ChunkMap _map;
 
         private byte[] _innerBuffer;
@@ -34,12 +36,13 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
 
 
         protected BinaryDownloadStream(IMongoCollection<Chunk> chunks, NamedReaderWriterLock namedReaderWriterLock,
-            int maxChunkLenght)
+            int maxChunkLenght, IMongoCollection<ChunkMap> maps)
         {
             _chunks = chunks;
             _innerBuffer = null;
             _nrwl = namedReaderWriterLock;
             _maxChunkLenght = maxChunkLenght;
+            _maps = maps;
             _currentChunkIndex = 0;
             _curretIndex = 0;
         }
@@ -47,45 +50,51 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
         public static (bool success, BinaryDownloadStream stream) Open(IMongoCollection<ChunkMap> maps,
             IMongoCollection<Chunk> chunks, int maxChunkLenght, string id, NamedReaderWriterLock namedReaderWriterLock)
         {
-            var (success, map) = LoadElement(maps, id);
+            var (success, map) = LoadElement(maps, id,namedReaderWriterLock);
             if (!success) return (false, null);
 
-            var stream = new BinaryDownloadStream(chunks, namedReaderWriterLock, maxChunkLenght)
+            var stream = new BinaryDownloadStream(chunks, namedReaderWriterLock, maxChunkLenght, maps)
             {
-                _map = map
+                _map = map,
             };
             stream.Seek(0, SeekOrigin.Begin);
 
-            namedReaderWriterLock.AcquireReaderLock(map.ID);
+            
+            stream._nrwlID = namedReaderWriterLock.AcquireReaderLock($"{nameof(Chunk)}.{id}");
             return (true, stream);
         }
 
         public static async Task<(bool success, BinaryDownloadStream stream)> OpenAsync(IMongoCollection<ChunkMap> maps,
             IMongoCollection<Chunk> chunks, int maxChunkLenght, string id, NamedReaderWriterLock namedReaderWriterLock)
         {
-            var (success, map) = await LoadElementAsync(maps, id);
+            var (success, map) = await LoadElementAsync(maps, id,namedReaderWriterLock);
             if (!success) return (false, null);
 
-            var stream = new BinaryDownloadStream(chunks, namedReaderWriterLock, maxChunkLenght)
+            var stream = new BinaryDownloadStream(chunks, namedReaderWriterLock, maxChunkLenght,maps)
             {
                 _map = map
             };
             await stream.SeekAsync(0, SeekOrigin.Begin);
+            stream._nrwlID = await namedReaderWriterLock.AcquireReaderLockAsync($"{nameof(Chunk)}.{id}");
             return (true, stream);
         }
 
-        protected static (bool success, ChunkMap map) LoadElement(IMongoCollection<ChunkMap> maps, string id)
+        protected static (bool success, ChunkMap map) LoadElement(IMongoCollection<ChunkMap> maps, string id, NamedReaderWriterLock nrwl)
         {
+            var lId = nrwl.AcquireReaderLock($"{nameof(ChunkMap)}.{id}");
             var mapSearch = maps.Find(x => x.ID == id).ToList();
             if (mapSearch.Count == 0) return (false, null);
+            nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId);
             return (true, mapSearch.First());
         }
 
         protected static async Task<(bool success, ChunkMap map)> LoadElementAsync(IMongoCollection<ChunkMap> maps,
-            string id)
+            string id,NamedReaderWriterLock nrwl)
         {
+            var lId = await nrwl.AcquireReaderLockAsync($"{nameof(ChunkMap)}.{id}");
             var mapSearch = (await maps.FindAsync(x => x.ID == id)).ToList();
             if (mapSearch.Count == 0) return (false, null);
+            await nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}",lId);
             return (true, mapSearch.First());
         }
 
@@ -218,6 +227,24 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             if (_innerBuffer != null)
             {
                 _innerBuffer = null;
+                string lId = _nrwl.AcquireWriterLock($"{nameof(ChunkMap)}.{_map.ID}");
+                var search = _maps.Find(x => x.ID == _map.ID);
+                var lSearch = search.ToList();
+                if (lSearch.Any())
+                {
+                    var m = search.First();
+                    if (m.Removed)
+                    {
+                        _chunks.DeleteMany(x => m.ChunksIDs.Contains(x.ID));
+                        _maps.DeleteOne(x => x.ID == _map.ID);
+                    }
+                }
+                
+                
+                
+                _nrwl.ReleaseLock($"{nameof(ChunkMap)}.{_map.ID}",lId);
+                
+                _nrwl.ReleaseLock($"{nameof(Chunk)}.{_map.ID}",_nrwlID);
             }
         }
 

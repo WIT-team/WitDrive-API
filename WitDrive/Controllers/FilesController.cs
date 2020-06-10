@@ -48,7 +48,7 @@ namespace WitDrive.Controllers
 
             try
             {
-                var usr = fsc.AccessControl.GetUser(userId.ToString());
+                var usr = await fsc.AccessControl.GetUserAsync(userId.ToString());
                 var dir = await fsc.Directories.GetAsync(usr.RootDirectory);
                 var subDirs = await fsc.Directories.GetSubelementsAsync(usr.RootDirectory);
                 return Ok(dir.DirToJson(subDirs));
@@ -70,7 +70,7 @@ namespace WitDrive.Controllers
 
             try
             {
-                var perm = fsc.AccessControl.CheckPermissionsWithUsername(directoryId, userId.ToString(), false, true, true, false);
+                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(directoryId, userId.ToString(), false, true, true, false);
                 if (!perm)
                 {
                     return Unauthorized();
@@ -78,7 +78,7 @@ namespace WitDrive.Controllers
 
                 var f = await fsc.Files.CreateAsync(directoryId, file.FileName, filesService.ConvertToByteArray(file));
 
-                fsc.AccessControl.CreateAccessControl(f.ID, userId.ToString());
+                await fsc.AccessControl.CreateAccessControlAsync(f.ID, userId.ToString());
 
                 return Ok();
             }
@@ -102,7 +102,7 @@ namespace WitDrive.Controllers
 
             try
             {
-                if (fsc.AccessControl.CheckPermissionsWithUsername(fileId, userId.ToString(), false, true, false, true))
+                if (await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, false, true))
                 {
                     return Unauthorized();
                 }
@@ -161,13 +161,13 @@ namespace WitDrive.Controllers
 
             try
             {
-                var perm = fsc.AccessControl.CheckPermissionsWithUsername(fileId, userId.ToString(), true, false, false, false);
+                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), true, false, false, false);
                 if (!perm)
                 {
                     return Unauthorized();
                 }
                 var shareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-                var fileInfo = fsc.AccessControl.AuthorizeToken(fileId, shareId, true, true, true);
+                var fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(fileId, shareId, true, true, true);
 
                 ShareMap f = new ShareMap();
                 f.ElementId = fileInfo.ID;
@@ -207,14 +207,14 @@ namespace WitDrive.Controllers
 
             try
             {
-                var perm = fsc.AccessControl.CheckPermissionsWithUsername(fileId, userId.ToString(), true, false, false, false);
+                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), true, false, false, false);
                 if (!perm)
                 {
                     return Unauthorized();
                 }
                 var fileInfo = await fsc.Files.GetAsync(fileId);
                 var shrId = (string)fileInfo.CustomMetadata["ShareID"];
-                fileInfo = fsc.AccessControl.AuthorizeToken(fileId, shrId, false, false, false);
+                fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(fileId, shrId, false, false, false);
 
                 await fsc.Files.SetCustomMetadataAsync(fileId, "ShareID", String.Empty);
                 await fsc.Files.SetCustomMetadataAsync(fileId, "Shared", false);
@@ -253,7 +253,7 @@ namespace WitDrive.Controllers
             }
             try
             {
-                var perm = fsc.AccessControl.CheckPermissionsWithUsername(fileId, userId.ToString(), false, false, true, false);
+                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, false, true, false);
                 if (!perm)
                 {
                     return Unauthorized();
@@ -280,8 +280,8 @@ namespace WitDrive.Controllers
             }
             try
             {
-                var usr = fsc.AccessControl.GetUser(userId.ToString());
-                var perm = fsc.AccessControl.CheckPermissionsWithUsername(usr.RootDirectory, userId.ToString(), false, false, true, false);
+                var usr = await fsc.AccessControl.GetUserAsync(userId.ToString());
+                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(usr.RootDirectory, userId.ToString(), false, true, false, false);
                 if (!perm)
                 {
                     return Unauthorized();
@@ -315,15 +315,49 @@ namespace WitDrive.Controllers
             {
                 return Unauthorized();
             }
-            
-            var res = await repo.GetFileFromShareAsync(Convert.ToString(userId), shareId);
 
-            if (res.success)
+            var shareInfo = await filesService.GetByShareId(shareId);
+
+            if (!shareInfo.Active)
             {
-                return Ok(res.result);
+                return BadRequest("Failed to retrieve file info");
             }
 
-            return BadRequest("Failed to retrieve file info");
+            try
+            {
+                var usr = await fsc.AccessControl.GetUserAsync(userId.ToString());
+                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(usr.RootDirectory, userId.ToString(), false, true, false, false);
+                if (!perm)
+                {
+                    return Unauthorized();
+                }
+                var query = new ElementSearchQuery();
+                query.CustomMetadata.Add(("ShareID", ESearchCondition.Eq, shareInfo.ElementId));
+                var search = await fsc.Directories.FindAsync(usr.RootDirectory, query);
+                var trueSearch = fsc.AccessControl.ModerateSearch(userId.ToString(), search);
+
+                if (trueSearch.Count() == 0)
+                {
+                    return BadRequest("Failed to retrieve file info");
+                }
+                else
+                {
+                    var element = trueSearch.First();
+                    if (element.Type == 2)
+                    {
+                        return BadRequest("Failed to retrieve file info");
+                    }
+                    return Ok(element.FileToJson());
+                }
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
+            {
+                return BadRequest("Failed to retrieve file info");
+            }
+            catch (Exception)
+            {
+                return BadRequest("Failed to retrieve file info");
+            }
         }
 
     }
