@@ -40,7 +40,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             {
                 _map = map
             };
-            stream._nrwlID = namedReaderWriterLock.AcquireWriterLock($"{nameof(Chunk)}.{id}");
+            stream._nrwlID = namedReaderWriterLock.AcquireWriterLock($"{nameof(Chunk)}.{map.ID}");
 
             return (true, stream);
         }
@@ -59,7 +59,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             {
                 _map = map
             };
-            stream._nrwlID = await namedReaderWriterLock.AcquireWriterLockAsync($"{nameof(Chunk)}.{id}");
+            stream._nrwlID = await namedReaderWriterLock.AcquireWriterLockAsync($"{nameof(Chunk)}.{map.ID}");
             return (true, stream);
         }
 
@@ -247,7 +247,18 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
                 _nrwl.ReleaseLock($"{nameof(ChunkMap)}.{_map.ID}",lId);
             }
         }
-
+        public new async Task FlushAsync()
+        {
+            if (_writeBuffer != null)
+            {
+                await SaveBytesInDbAsync(_writeBuffer);
+                await _nrwl.ReleaseLockAsync($"{nameof(Chunk)}.{_map.ID}", _nrwlID);
+                _writeBuffer = null;
+                string lId = await _nrwl.AcquireWriterLockAsync($"{nameof(ChunkMap)}.{_map.ID}");
+                await _maps.UpdateOneAsync(x => x.ID == _map.ID, Builders<ChunkMap>.Update.Set(x => x.Removed, false));
+                await _nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{_map.ID}", lId);
+            }
+        }
 
         public new void Dispose()
         {
@@ -263,10 +274,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
 
 #pragma warning disable IDE0060
 #pragma warning disable CS8632
-        //public new async Task FlushAsync()
-        //{
-        //    throw new NotSupportedException();
-        //}
+
         public override int ReadTimeout
         {
             get => throw new NotSupportedException();
@@ -285,134 +293,134 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             set => throw new NotSupportedException();
         }
 
-        public new static Stream Synchronized(Stream stream)
-        {
-            throw new NotSupportedException();
-        }
+        //public new static Stream Synchronized(Stream stream)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback callback,
-            object? state)
-        {
-            throw new NotSupportedException();
-        }
+        //public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback callback,
+        //    object? state)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override IAsyncResult BeginWrite(byte[] buffer, int offset, int count, AsyncCallback callback,
-            object? state)
-        {
-            throw new NotSupportedException();
-        }
+        //public override IAsyncResult BeginWrite(byte[] buffer, int offset, int count, AsyncCallback callback,
+        //    object? state)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override void CopyTo(Stream destination, int bufferSize)
-        {
-            throw new NotSupportedException();
-        }
+        //public override void CopyTo(Stream destination, int bufferSize)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public new void CopyTo(Stream destination)
-        {
-            throw new NotSupportedException();
-        }
+        //public new void CopyTo(Stream destination)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public new Task CopyToAsync(Stream destination, CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
+        //public new Task CopyToAsync(Stream destination, CancellationToken cancellationToken)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public new Task CopyToAsync(Stream destination)
-        {
-            throw new NotSupportedException();
-        }
+        //public new Task CopyToAsync(Stream destination)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public new Task CopyToAsync(Stream destination, int bufferSize)
-        {
-            throw new NotSupportedException();
-        }
+        //public new Task CopyToAsync(Stream destination, int bufferSize)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
+        //public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override ValueTask DisposeAsync()
-        {
-            throw new NotSupportedException();
-        }
+        //public override ValueTask DisposeAsync()
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override int EndRead(IAsyncResult asyncResult)
-        {
-            throw new NotSupportedException();
-        }
+        //public override int EndRead(IAsyncResult asyncResult)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override void EndWrite(IAsyncResult asyncResult)
-        {
-            throw new NotSupportedException();
-        }
+        //public override void EndWrite(IAsyncResult asyncResult)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override Task FlushAsync(CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
+        //public override Task FlushAsync(CancellationToken cancellationToken)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override int Read(Span<byte> buffer)
-        {
-            throw new NotSupportedException();
-        }
+        //public override int Read(Span<byte> buffer)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
+        //public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
+        //public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public new Task<int> ReadAsync(byte[] buffer, int offset, int count)
-        {
-            throw new NotSupportedException();
-        }
+        //public new Task<int> ReadAsync(byte[] buffer, int offset, int count)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override int ReadByte()
-        {
-            throw new NotSupportedException();
-        }
+        //public override int ReadByte()
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override void Write(ReadOnlySpan<byte> buffer)
-        {
-            throw new NotSupportedException();
-        }
+        //public override void Write(ReadOnlySpan<byte> buffer)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
+        //public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
+        //public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override void WriteByte(byte value)
-        {
-            throw new NotSupportedException();
-        }
+        //public override void WriteByte(byte value)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        [Obsolete]
-        protected override WaitHandle CreateWaitHandle()
-        {
-            throw new NotSupportedException();
-        }
+        //[Obsolete]
+        //protected override WaitHandle CreateWaitHandle()
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        protected override void Dispose(bool disposing)
-        {
-            throw new NotSupportedException();
-        }
+        //protected override void Dispose(bool disposing)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        [Obsolete]
-        protected override void ObjectInvariant()
-        {
-            throw new NotSupportedException();
-        }
+        //[Obsolete]
+        //protected override void ObjectInvariant()
+        //{
+        //    throw new NotSupportedException();
+        //}
 
         public override long Seek(long offset, SeekOrigin origin)
         {

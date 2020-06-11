@@ -245,7 +245,7 @@ namespace MDBFS.FileSystem.BinaryStorage
             } //not found
 
             var map = mapSearch.First();
-            var nMap = new ChunkMap {ChunksIDs = new List<string>(), Length = map.Length};
+            var nMap = new ChunkMap {ChunksIDs = new List<string>(), Length = map.Length, Removed = false};
             var chunksSearch = _chunks.Find(Builders<Chunk>.Filter.Where(x => map.ChunksIDs.Contains(x.ID)));
             var nChunks = chunksSearch.ToEnumerable().Select(ch => new Chunk {Bytes = ch.Bytes}).ToList();
             _chunks.InsertMany(nChunks);
@@ -267,7 +267,7 @@ namespace MDBFS.FileSystem.BinaryStorage
             } //not found
 
             var map = mapSearch.First();
-            var nMap = new ChunkMap {ChunksIDs = new List<string>(), Length = map.Length};
+            var nMap = new ChunkMap {ChunksIDs = new List<string>(), Length = map.Length, Removed = false};
             var chunksSearch = await _chunks.FindAsync(Builders<Chunk>.Filter.Where(x => map.ChunksIDs.Contains(x.ID)));
             var nChunks = new List<Chunk>();
 

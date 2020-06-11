@@ -20,13 +20,20 @@ namespace WitDrive.Infrastructure.Extensions
 
             jObject[nameof(dir.ID)] = dir.ID;
             jObject[nameof(dir.ParentID)] = dir.ParentID;
-            jObject[nameof(dir.Created)] = dir.ID;
+            jObject[nameof(dir.Created)] = dir.Created;
             jObject[nameof(dir.Modified)] = dir.Modified;
             jObject[nameof(dir.Opened)] = dir.Opened;
             jObject[nameof(dir.Type)] = dir.Type;
+            jObject[nameof(dir.Name)] = dir.Name;
 
-            jObject["Shared"] = (bool)dir.CustomMetadata["Shared"];
-            jObject["ShareID"] = (bool)dir.CustomMetadata["ShareID"];
+            if (dir.CustomMetadata.ContainsKey("Shared"))
+            {
+                jObject["Shared"] = (bool)dir.CustomMetadata["Shared"];
+            }
+            if (dir.CustomMetadata.ContainsKey("ShareID"))
+            {
+                jObject["ShareID"] = (string)dir.CustomMetadata["ShareID"];
+            }
 
             return jObject;
         }
@@ -41,26 +48,35 @@ namespace WitDrive.Infrastructure.Extensions
 
             jObject[nameof(file.ID)] = file.ID;
             jObject[nameof(file.ParentID)] = file.ParentID;
-            jObject[nameof(file.Created)] = file.ID;
+            jObject[nameof(file.Created)] = file.Created;
             jObject[nameof(file.Modified)] = file.Modified;
             jObject[nameof(file.Opened)] = file.Opened;
             jObject[nameof(file.Type)] = file.Type;
+            jObject[nameof(file.Name)] = file.Name;
 
-            jObject["Shared"] = (bool)file.CustomMetadata["Shared"];
-            jObject["ShareID"] = (string)file.CustomMetadata["ShareID"];
-            jObject[nameof(EMatadataKeys.Length)] = (long)file.CustomMetadata[nameof(EMatadataKeys.Length)];
-
-            if (file.Metadata.ContainsKey(nameof(EMatadataKeys.Deleted)))
+            if (file.CustomMetadata.ContainsKey("Shared"))
             {
-                jObject[nameof(EMatadataKeys.Deleted)] = (DateTime)file.Metadata[nameof(EMatadataKeys.Deleted)];
+                jObject["Shared"] = (bool)file.CustomMetadata["Shared"];
             }
-            if (file.Metadata.ContainsKey(nameof(EMatadataKeys.PathIDs)))
+            if (file.CustomMetadata.ContainsKey("ShareID"))
             {
-                jObject[nameof(EMatadataKeys.PathIDs)] = (DateTime)file.Metadata[nameof(EMatadataKeys.PathIDs)];
+                jObject["ShareID"] = (string)file.CustomMetadata["ShareID"];
             }
-            if (file.Metadata.ContainsKey(nameof(EMatadataKeys.PathNames)))
+            if (file.Metadata.ContainsKey(nameof(EMetadataKeys.Length)))
             {
-                jObject[nameof(EMatadataKeys.Deleted)] = (DateTime)file.Metadata[nameof(EMatadataKeys.PathNames)];
+                jObject[nameof(EMetadataKeys.Length)] = (long)file.Metadata[nameof(EMetadataKeys.Length)];
+            }
+            if (file.Metadata.ContainsKey(nameof(EMetadataKeys.Deleted)))
+            {
+                jObject[nameof(EMetadataKeys.Deleted)] = (DateTime)file.Metadata[nameof(EMetadataKeys.Deleted)];
+            }
+            if (file.Metadata.ContainsKey(nameof(EMetadataKeys.PathIDs)))
+            {
+                jObject[nameof(EMetadataKeys.PathIDs)] = (DateTime)file.Metadata[nameof(EMetadataKeys.PathIDs)];
+            }
+            if (file.Metadata.ContainsKey(nameof(EMetadataKeys.PathNames)))
+            {
+                jObject[nameof(EMetadataKeys.Deleted)] = (DateTime)file.Metadata[nameof(EMetadataKeys.PathNames)];
             }
 
             return jObject;
@@ -91,11 +107,11 @@ namespace WitDrive.Infrastructure.Extensions
 
         public static JObject ElementToJObject(this Element element)
         {
-            if (element.Type == 1)
+            if (element.Type == 2)
             {
                 return element.DirToJObject();
             }
-            else if (element.Type == 2)
+            else if (element.Type == 1)
             {
                 return element.FileToJObject();
             }

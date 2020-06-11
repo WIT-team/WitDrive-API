@@ -91,6 +91,7 @@ namespace WitDrive
             services.AddScoped<IEmailSender, EmailSender>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IFilesService, FilesService>();
+            services.AddScoped<IDirService, DirService>();
             services.AddAutoMapper(typeof(AuthService).Assembly);
             services.AddControllers();
             //services.AddSingleton<IConfiguration>(Configuration);

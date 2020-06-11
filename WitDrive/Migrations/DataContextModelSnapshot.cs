@@ -133,6 +133,25 @@ namespace WitDrive.Migrations
                     b.ToTable("AspNetRoles");
                 });
 
+            modelBuilder.Entity("WitDrive.Models.ShareMap", b =>
+                {
+                    b.Property<string>("ShareId")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ElementId")
+                        .HasColumnType("text");
+
+                    b.Property<byte>("Type")
+                        .HasColumnType("smallint");
+
+                    b.HasKey("ShareId");
+
+                    b.ToTable("ShareLinks");
+                });
+
             modelBuilder.Entity("WitDrive.Models.User", b =>
                 {
                     b.Property<int>("Id")

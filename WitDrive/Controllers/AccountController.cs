@@ -9,6 +9,16 @@ using System.Threading.Tasks;
 using WitDrive.Dto;
 using WitDrive.Interfaces;
 using WitDrive.Models;
+using Microsoft.AspNetCore.Http;
+using MDBFS_Lib;
+using System.Net.Http;
+using System.Net;
+using Microsoft.Extensions.Configuration;
+using MDBFS.Filesystem;
+using MDBFS.Misc;
+using Newtonsoft.Json.Linq;
+using WitDrive.Infrastructure.Extensions;
+
 
 namespace WitDrive.Controllers
 {
@@ -17,14 +27,21 @@ namespace WitDrive.Controllers
     [AllowAnonymous]
     public class AccountController : Controller
     {
+        private readonly IConfiguration config;
         private readonly IEmailSender emailSender;
         private readonly UserManager<User> userManager;
-
-        public AccountController(IEmailSender emailSender, UserManager<User> userManager)
+        private readonly FileSystemClient fsc;
+        private readonly long space;
+        public AccountController(IEmailSender emailSender, UserManager<User> userManager, IConfiguration config)
         {
             this.emailSender = emailSender;
             this.userManager = userManager;
+            var mongoClient = new MongoDB.Driver.MongoClient(config.GetConnectionString("MongoDbConnection"));
+            var database = mongoClient.GetDatabase(nameof(WitDrive));
+            this.space = long.Parse(config.GetSection("DiskSpace").GetSection("Space").Value);
+            this.fsc = new FileSystemClient(database, chunkSize: 32768);
         }
+
 
         //[HttpPost("forgot-password")]
         //public async Task<IActionResult> ForgotPassword(ForgotPasswordDto forgotPasswordDto)

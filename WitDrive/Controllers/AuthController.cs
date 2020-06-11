@@ -93,13 +93,17 @@ namespace WitDrive.Controllers
                 try
                 {
                     var res = await fsc.AccessControl.CreateUserAsync(Convert.ToString(usr.Id), false);
+                    var r1 = await fsc.Directories.SetCustomMetadataAsync(res.RootDirectory, "Shared", false);
+                    var r2 = await fsc.Directories.SetCustomMetadataAsync(res.RootDirectory, "ShareID", String.Empty);
 
                 }
                 catch (Exception)
                 {
                     throw;
                 }
+                return StatusCode(201);
             }
+
             return BadRequest(result.Errors);
         }
     }

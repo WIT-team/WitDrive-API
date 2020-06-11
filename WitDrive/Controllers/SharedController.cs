@@ -13,6 +13,7 @@ using Newtonsoft.Json;
 using MDBFS.Filesystem;
 using WitDrive.Infrastructure.Extensions;
 using MDBFS.Misc;
+using Newtonsoft.Json.Linq;
 
 namespace WitDrive.Controllers
 {
@@ -22,30 +23,15 @@ namespace WitDrive.Controllers
     {
         private readonly IConfiguration config;
         private readonly IFilesService filesService;
-        //private readonly FileRepository repo;
         private readonly FileSystemClient fsc;
         public SharedController(IFilesService filesService, IConfiguration config)
         {
             this.config = config;
             this.filesService = filesService;
-            //this.repo = new FileRepository(config.GetConnectionString("MongoDbConnection"));
             var mongoClient = new MongoDB.Driver.MongoClient(config.GetConnectionString("MongoDbConnection"));
             var database = mongoClient.GetDatabase(nameof(WitDrive));
             this.fsc = new FileSystemClient(database, chunkSize: 32768);
         }
-
-        //[HttpGet("info/{shareId}")]
-        //public async Task<IActionResult> GetSharedFile(string shareId)
-        //{
-        //    var res = await repo.GetFileFromShareAsync(null, shareId);
-
-        //    if (res.success)
-        //    {
-        //        return Ok(res.result);
-        //    }
-
-        //    return BadRequest("Failed to retrieve file info");
-        //}
 
         [HttpGet("info/{shareId}")]
         public async Task<IActionResult> GetSharedInfo(string shareId)
@@ -60,8 +46,7 @@ namespace WitDrive.Controllers
 
             try
             {
-                var perm = await fsc.AccessControl.CheckPermissionsWithTokenAsync(shareInfo.ElementId, shareInfo.ShareId, false, true, false, false);
-                if (!perm)
+                if (!await fsc.AccessControl.CheckPermissionsWithTokenAsync(shareInfo.ElementId, shareInfo.ShareId, false, true, false, false))
                 {
                     return Unauthorized();
                 }
@@ -70,23 +55,34 @@ namespace WitDrive.Controllers
 
                 if (element.Type == 1)
                 {
-                    return Ok(element.FileToJson());
+                    JArray jArray = new JArray();
+                    jArray.Add(element.FileToJObject());
+                    return Ok(jArray.ToString());
                 }
                 else if(element.Type == 2)
                 {
+                    JArray jArray = new JArray();
                     var subElments = await fsc.Directories.GetSubelementsAsync(shareInfo.ElementId);
-                    return Ok(element.DirToJson(subElments));
+                    foreach (var item in subElments)
+                    {
+
+                        if (item.Type == 1)
+                        {
+                            jArray.Add(item.FileToJObject());
+                        }
+                    }
+                    return Ok(jArray.ToString());
                 }
                 else
                 {
                     throw new Exception("Not possible in this universe");
                 }
             }
-            catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
             {
                 return BadRequest("Failed to retrieve share info");
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 return BadRequest("Failed to retrieve share info");
             }
@@ -104,8 +100,7 @@ namespace WitDrive.Controllers
 
             try
             {
-                var perm = await fsc.AccessControl.CheckPermissionsWithTokenAsync(shareInfo.ElementId, shareInfo.ShareId, false, true, false, false);
-                if (!perm)
+                if (!await fsc.AccessControl.CheckPermissionsWithTokenAsync(shareInfo.ElementId, shareInfo.ShareId, false, true, false, false))
                 {
                     return Unauthorized();
                 }

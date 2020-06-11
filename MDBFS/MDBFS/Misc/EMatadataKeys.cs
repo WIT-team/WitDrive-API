@@ -1,6 +1,6 @@
 ﻿namespace MDBFS.Misc
 {
-    public enum EMatadataKeys
+    public enum EMetadataKeys
     {
         Length,
         PathNames,

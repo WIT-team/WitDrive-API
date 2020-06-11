@@ -26,16 +26,16 @@ namespace WitDrive.Controllers
     {
         private readonly IConfiguration config;
         private readonly IFilesService filesService;
-        //readonly FileRepository repo;
         private readonly FileSystemClient fsc;
+        private readonly long space;
         public FilesController(IFilesService filesService, IConfiguration config)
         {
             this.config = config;
             this.filesService = filesService;
-            //this.repo = new FileRepository(config.GetConnectionString("MongoDbConnection"));
             var mongoClient = new MongoDB.Driver.MongoClient(config.GetConnectionString("MongoDbConnection"));
             var database = mongoClient.GetDatabase(nameof(WitDrive));
             this.fsc = new FileSystemClient(database, chunkSize: 32768);
+            this.space = long.Parse(config.GetSection("DiskSpace").GetSection("Space").Value);
         }
 
         [HttpGet("root")]
@@ -51,13 +51,17 @@ namespace WitDrive.Controllers
                 var usr = await fsc.AccessControl.GetUserAsync(userId.ToString());
                 var dir = await fsc.Directories.GetAsync(usr.RootDirectory);
                 var subDirs = await fsc.Directories.GetSubelementsAsync(usr.RootDirectory);
+
                 return Ok(dir.DirToJson(subDirs));
             }
-            catch (Exception)
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return BadRequest("Directory not found");
+            }
+            catch (Exception e)
             {
                 return BadRequest("Failed to retrieve root data");
             }
-
         }
 
         [HttpPost("upload")]
@@ -67,26 +71,33 @@ namespace WitDrive.Controllers
             {
                 return Unauthorized();
             }
-
+        
             try
             {
-                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(directoryId, userId.ToString(), false, true, true, false);
-                if (!perm)
+                byte[] data = filesService.ConvertToByteArray(file);
+
+                if (await fsc.AccessControl.CalculateDiskUsageAsync(userId.ToString()) + data.Length > space)
+                {
+                    return Unauthorized("Not enough space");
+                }
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(directoryId, userId.ToString(), false, true, true, false))
                 {
                     return Unauthorized();
                 }
 
-                var f = await fsc.Files.CreateAsync(directoryId, file.FileName, filesService.ConvertToByteArray(file));
+                var f = await fsc.Files.CreateAsync(directoryId, file.FileName, data);
 
                 await fsc.AccessControl.CreateAccessControlAsync(f.ID, userId.ToString());
+                var r1 = await fsc.Directories.SetCustomMetadataAsync(f.ID, "Shared", false);
+                var r2 = await fsc.Directories.SetCustomMetadataAsync(f.ID, "ShareID", String.Empty);
 
                 return Ok();
             }
-            catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
             {
                 return BadRequest("Directory not found");
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 return BadRequest("Failed to upload file");
             }
@@ -102,7 +113,7 @@ namespace WitDrive.Controllers
 
             try
             {
-                if (await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, false, true))
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, false, false))
                 {
                     return Unauthorized();
                 }
@@ -130,26 +141,116 @@ namespace WitDrive.Controllers
 
         }
 
-        //[HttpPost("download/{fileId}")]
-        //public async Task<IActionResult> FileDownloadTwo(int userId, string fileId)
-        //{
-        //    if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-        //    {
-        //        return Unauthorized();
-        //    }
+        [HttpPatch("rename/{fileId}")]
+        public async Task<IActionResult> RenameFile(int userId, string fileId, [FromQuery] string name)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
 
-        //    MDBFS_Lib.Util.AsyncResult<KeyValuePair<string, byte[]>?> res = await repo.DownloadFileAsync(Convert.ToString(userId), fileId);
+            try
+            {                       
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, true, false))
+                {
+                    return Unauthorized();
+                }
 
-        //    if (res.success)
-        //    {
-        //        string fileName = res.result.Value.Key;
-        //        byte[] data = res.result.Value.Value;
-        //        return File(data, MimeTypes.GetMimeType(fileName), fileName);
-        //    }
+                var tmpDeb = await fsc.Files.RenameAsync(fileId, name);
 
-        //    return BadRequest("Failed to download file");
-        //}
+                return Ok();
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return BadRequest("File not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to change file name");
+            }
 
+        }
+
+        [HttpPatch("move")]
+        public async Task<IActionResult> MoveFile([FromQuery] string fileId, [FromQuery] string dirId, int userId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+            if (dirId == fsc.Directories.Root)
+            {
+                return BadRequest("Invalid operation");
+            }
+            try
+            {
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, true, false))
+                {
+                    return Unauthorized();
+                }
+
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(dirId, userId.ToString(), false, true, true, true))
+                {
+                    return Unauthorized();
+                }
+
+                var tmpDeb = await fsc.Files.MoveAsync(fileId, dirId);
+                return Ok();
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return BadRequest("File not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to move file");
+            }
+        }
+
+        [HttpPut("copy")]
+        public async Task<IActionResult> CopyFile([FromQuery] string fileId, [FromQuery] string dirId, int userId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+            if (dirId == fsc.Directories.Root)
+            {
+                return BadRequest("Invalid operation");
+            }
+            try
+            {
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, true, false))
+                {
+                    return Unauthorized();
+                }
+
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(dirId, userId.ToString(), false, true, true, true))
+                {
+                    return Unauthorized();
+                }
+
+                var file = await fsc.Files.GetAsync(fileId);
+                var length = (long)file.Metadata[nameof(EMetadataKeys.Length)];
+
+                if (await fsc.AccessControl.CalculateDiskUsageAsync(userId.ToString()) + length > space)
+                {
+                    return Unauthorized("Not enough space");
+                }
+
+                var deb = await fsc.Files.CopyAsync(fileId, dirId);
+
+                return Ok();
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return BadRequest("File not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to move file");
+            }
+        }
 
         [HttpPatch("share/{fileId}")]
         public async Task<IActionResult> EnableFileSharing(int userId, string fileId)
@@ -161,19 +262,41 @@ namespace WitDrive.Controllers
 
             try
             {
-                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), true, false, false, false);
-                if (!perm)
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), true, false, false, false))
                 {
                     return Unauthorized();
                 }
                 var shareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
                 var fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(fileId, shareId, true, true, true);
 
-                ShareMap f = new ShareMap();
-                f.ElementId = fileInfo.ID;
-                f.Type = fileInfo.Type;
-                f.ShareId = shareId;
-                f.Active = true;
+                if (fileInfo.Type == 2)
+                {
+                    var subElems = await fsc.Directories.GetSubelementsAsync(fileInfo.ID);
+                    foreach (var item in subElems)
+                    {
+                        var itemShareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+                        var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, itemShareId, true, true, true);
+
+                        ShareMap tmp0 = new ShareMap();
+                        tmp0.ElementId = item.ID;
+                        tmp0.Type = item.Type;
+                        tmp0.ShareId = itemShareId;
+                        tmp0.Active = true;
+
+                        filesService.Add<ShareMap>(tmp0);
+
+                        await fsc.Files.SetCustomMetadataAsync(item.ID, "ShareID", itemShareId);
+                        await fsc.Files.SetCustomMetadataAsync(item.ID, "Shared", true);
+                    }
+                }
+
+                ShareMap f = new ShareMap()
+                {
+                    ElementId = fileInfo.ID,
+                    Type = fileInfo.Type,
+                    ShareId = shareId,
+                    Active = true
+                };
 
                 filesService.Add<ShareMap>(f);
 
@@ -207,23 +330,48 @@ namespace WitDrive.Controllers
 
             try
             {
-                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), true, false, false, false);
-                if (!perm)
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), true, false, false, false))
                 {
                     return Unauthorized();
                 }
+
                 var fileInfo = await fsc.Files.GetAsync(fileId);
                 var shrId = (string)fileInfo.CustomMetadata["ShareID"];
                 fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(fileId, shrId, false, false, false);
 
+                if (fileInfo.Type == 2)
+                {
+                    var subElems = await fsc.Directories.GetSubelementsAsync(fileInfo.ID);
+                    foreach (var item in subElems)
+                    {
+                        var cstMta = (string)item.CustomMetadata["ShareID"];
+                        var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, cstMta, false, false, false);
+
+                        ShareMap tmp = new ShareMap()
+                        {
+                            ElementId = item.ID,
+                            Type = item.Type,
+                            ShareId = cstMta,
+                            Active = false
+                        };
+
+                        filesService.Update<ShareMap>(tmp);
+
+                        await fsc.Files.SetCustomMetadataAsync(item.ID, "ShareID", String.Empty);
+                        await fsc.Files.SetCustomMetadataAsync(item.ID, "Shared", false);
+                    }
+                }
                 await fsc.Files.SetCustomMetadataAsync(fileId, "ShareID", String.Empty);
                 await fsc.Files.SetCustomMetadataAsync(fileId, "Shared", false);
 
-                ShareMap f = new ShareMap();
-                f.ElementId = fileInfo.ID;
-                f.Type = fileInfo.Type;
-                f.ShareId = shrId;
-                f.Active = false;
+
+                ShareMap f = new ShareMap()
+                {
+                    ElementId = fileInfo.ID,
+                    Type = fileInfo.Type,
+                    ShareId = shrId,
+                    Active = false
+                };
 
                 filesService.Update<ShareMap>(f);
 
@@ -253,19 +401,20 @@ namespace WitDrive.Controllers
             }
             try
             {
-                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, false, true, false);
-                if (!perm)
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, false, true, false))
                 {
                     return Unauthorized();
                 }
-                await fsc.Files.RemoveAsync(fileId, false);
+
+                await fsc.Files.RemoveAsync(fileId, true); //todo
+
                 return Ok();
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
             {
                 return BadRequest("Unknown file id");
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 return BadRequest("Failed to delete file");
             }
@@ -281,28 +430,31 @@ namespace WitDrive.Controllers
             try
             {
                 var usr = await fsc.AccessControl.GetUserAsync(userId.ToString());
-                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(usr.RootDirectory, userId.ToString(), false, true, false, false);
-                if (!perm)
+
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(usr.RootDirectory, userId.ToString(), false, true, false, false))
                 {
                     return Unauthorized();
                 }
+
                 var query = new ElementSearchQuery();
                 query.CustomMetadata.Add(("Shared", ESearchCondition.Eq, true));
                 var search = await fsc.Directories.FindAsync(usr.RootDirectory, query);
                 var trueSearch = fsc.AccessControl.ModerateSearch(userId.ToString(), search);
 
                 JArray jArray = new JArray();
+
                 foreach (var item in trueSearch)
                 {
                     jArray.Add(item.ElementToJObject());
                 }
+
                 return Ok(jArray.ToString());
             }
-            catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
             {
                 return BadRequest("Failed to get shared list");
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 return BadRequest("Failed to get shared list");
             }
@@ -326,11 +478,12 @@ namespace WitDrive.Controllers
             try
             {
                 var usr = await fsc.AccessControl.GetUserAsync(userId.ToString());
-                var perm = await fsc.AccessControl.CheckPermissionsWithUsernameAsync(usr.RootDirectory, userId.ToString(), false, true, false, false);
-                if (!perm)
+
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(usr.RootDirectory, userId.ToString(), false, true, false, false))
                 {
                     return Unauthorized();
                 }
+
                 var query = new ElementSearchQuery();
                 query.CustomMetadata.Add(("ShareID", ESearchCondition.Eq, shareInfo.ElementId));
                 var search = await fsc.Directories.FindAsync(usr.RootDirectory, query);
