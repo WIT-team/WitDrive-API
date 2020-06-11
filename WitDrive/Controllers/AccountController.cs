@@ -24,7 +24,6 @@ namespace WitDrive.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
     public class AccountController : Controller
     {
         private readonly IConfiguration config;
@@ -42,6 +41,24 @@ namespace WitDrive.Controllers
             this.fsc = new FileSystemClient(database, chunkSize: 32768);
         }
 
+        [Authorize]
+        [HttpGet("/u/{userId}/space-info")]
+        public async Task<IActionResult> Space(int userId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+
+            var usedDiskSpace = await fsc.AccessControl.CalculateDiskUsageAsync(userId.ToString());
+
+            JObject jObject = new JObject();
+            jObject["Used"] = usedDiskSpace;
+            jObject["Available"] = space;
+            jObject["Left"] = space - usedDiskSpace;
+
+            return Ok(jObject.ToString());
+        }
 
         //[HttpPost("forgot-password")]
         //public async Task<IActionResult> ForgotPassword(ForgotPasswordDto forgotPasswordDto)

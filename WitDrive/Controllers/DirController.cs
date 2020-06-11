@@ -39,26 +39,8 @@ namespace WitDrive.Controllers
             this.space = long.Parse(config.GetSection("DiskSpace").GetSection("Space").Value);
         }
 
-        [HttpGet("space")]
-        public async Task<IActionResult> Space(int userId)
-        {
-            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-            {
-                return Unauthorized();
-            }
-
-            var usedDiskSpace = await fsc.AccessControl.CalculateDiskUsageAsync(userId.ToString());
-
-            JObject jObject = new JObject();
-            jObject["Used"] = usedDiskSpace;
-            jObject["Available"] = space;
-            jObject["Left"] = space - usedDiskSpace;
-
-            return Ok(jObject.ToString());
-        }
-
-        [HttpPost("create/{dirId}/{name}")]
-        public async Task<IActionResult> CreateDirectory(string name, string dirId, int userId)
+        [HttpGet("root")]
+        public async Task<IActionResult> GetRootDir(int userId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
@@ -67,19 +49,11 @@ namespace WitDrive.Controllers
 
             try
             {
-                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(dirId, userId.ToString(), false, true, true, true))
-                {
-                    return Unauthorized();
-                }
+                var usr = await fsc.AccessControl.GetUserAsync(userId.ToString());
+                var dir = await fsc.Directories.GetAsync(usr.RootDirectory);
+                var subDirs = await fsc.Directories.GetSubelementsAsync(usr.RootDirectory);
 
-                var dir = await fsc.Directories.CreateAsync(dirId, name);
-
-                await fsc.AccessControl.CreateAccessControlAsync(dir.ID, userId.ToString());
-
-                await fsc.Files.SetCustomMetadataAsync(dir.ID, "ShareID", String.Empty);
-                await fsc.Files.SetCustomMetadataAsync(dir.ID, "Shared", true);
-
-                return Ok();
+                return Ok(dir.DirToJson(subDirs));
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
             {
@@ -87,7 +61,7 @@ namespace WitDrive.Controllers
             }
             catch (Exception e)
             {
-                return BadRequest("Failed to create new directory");
+                return BadRequest("Failed to retrieve root data");
             }
         }
 
@@ -120,8 +94,42 @@ namespace WitDrive.Controllers
             }
         }
 
-        [HttpPatch("rename/{dirId}/{name}")]
-        public async Task<IActionResult> RenameDirectory(string name, string dirId, int userId)
+        [HttpPost("create/{dirId}")]
+        public async Task<IActionResult> CreateDirectory([FromQuery] string name, string dirId, int userId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+
+            try
+            {
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(dirId, userId.ToString(), false, true, true, true))
+                {
+                    return Unauthorized();
+                }
+
+                var dir = await fsc.Directories.CreateAsync(dirId, name);
+
+                await fsc.AccessControl.CreateAccessControlAsync(dir.ID, userId.ToString());
+
+                await fsc.Files.SetCustomMetadataAsync(dir.ID, "ShareID", String.Empty);
+                await fsc.Files.SetCustomMetadataAsync(dir.ID, "Shared", true);
+
+                return Ok();
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return BadRequest("Directory not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to create new directory");
+            }
+        }
+
+        [HttpPatch("rename/{dirId}")]
+        public async Task<IActionResult> RenameDirectory([FromQuery] string name, string dirId, int userId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {

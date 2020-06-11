@@ -38,32 +38,6 @@ namespace WitDrive.Controllers
             this.space = long.Parse(config.GetSection("DiskSpace").GetSection("Space").Value);
         }
 
-        [HttpGet("root")]
-        public async Task<IActionResult> GetRootDir(int userId)
-        {
-            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-            {
-                return Unauthorized();
-            }
-
-            try
-            {
-                var usr = await fsc.AccessControl.GetUserAsync(userId.ToString());
-                var dir = await fsc.Directories.GetAsync(usr.RootDirectory);
-                var subDirs = await fsc.Directories.GetSubelementsAsync(usr.RootDirectory);
-
-                return Ok(dir.DirToJson(subDirs));
-            }
-            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
-            {
-                return BadRequest("Directory not found");
-            }
-            catch (Exception e)
-            {
-                return BadRequest("Failed to retrieve root data");
-            }
-        }
-
         [HttpPost("upload")]
         public async Task<IActionResult> FileUpload(int userId, string directoryId, [FromForm] IFormFile file)
         {
