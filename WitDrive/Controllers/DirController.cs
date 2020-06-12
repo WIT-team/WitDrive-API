@@ -113,9 +113,9 @@ namespace WitDrive.Controllers
                 dir = await fsc.AccessControl.CreateAccessControlAsync(dir.ID, userId.ToString());
 
                 await fsc.Files.SetCustomMetadataAsync(dir.ID, "ShareID", String.Empty);
-                await fsc.Files.SetCustomMetadataAsync(dir.ID, "Shared", true);
+                await fsc.Files.SetCustomMetadataAsync(dir.ID, "Shared", false);
 
-                return Ok(dir.DirToJson(await fsc.Directories.GetSubelementsAsync(dirId)));
+                return Ok(dir.DirToJson(await fsc.Directories.GetSubelementsAsync(dir.ID)));
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
             {

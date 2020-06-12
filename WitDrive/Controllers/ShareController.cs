@@ -39,7 +39,7 @@ namespace WitDrive.Controllers
         }
 
         [HttpPatch("enable")]
-        public async Task<IActionResult> EnableFileSharing(int userId, [FromQuery] string fileId)
+        public async Task<IActionResult> EnableFileSharing(int userId, [FromQuery] string elementId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
@@ -48,12 +48,12 @@ namespace WitDrive.Controllers
 
             try
             {
-                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), true, false, false, false))
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(elementId, userId.ToString(), true, false, false, false))
                 {
                     return Unauthorized();
                 }
                 var shareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-                var fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(fileId, shareId, true, true, true);
+                var fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(elementId, shareId, true, true, true);
 
                 if (fileInfo.Type == 2)
                 {
@@ -86,8 +86,8 @@ namespace WitDrive.Controllers
 
                 filesService.Add<ShareMap>(f);
 
-                await fsc.Files.SetCustomMetadataAsync(fileId, "ShareID", shareId);
-                await fsc.Files.SetCustomMetadataAsync(fileId, "Shared", true);
+                await fsc.Files.SetCustomMetadataAsync(elementId, "ShareID", shareId);
+                await fsc.Files.SetCustomMetadataAsync(elementId, "Shared", true);
 
                 if (await filesService.SaveAll())
                 {
@@ -107,7 +107,7 @@ namespace WitDrive.Controllers
         }
 
         [HttpPatch("disable")]
-        public async Task<IActionResult> DisableFileSharing(int userId, [FromQuery] string fileId)
+        public async Task<IActionResult> DisableFileSharing(int userId, [FromQuery] string elementId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
@@ -116,14 +116,14 @@ namespace WitDrive.Controllers
 
             try
             {
-                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), true, false, false, false))
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(elementId, userId.ToString(), true, false, false, false))
                 {
                     return Unauthorized();
                 }
 
-                var fileInfo = await fsc.Files.GetAsync(fileId);
+                var fileInfo = await fsc.Files.GetAsync(elementId);
                 var shrId = (string)fileInfo.CustomMetadata["ShareID"];
-                fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(fileId, shrId, false, false, false);
+                fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(elementId, shrId, false, false, false);
 
                 if (fileInfo.Type == 2)
                 {
@@ -147,8 +147,8 @@ namespace WitDrive.Controllers
                         await fsc.Files.SetCustomMetadataAsync(item.ID, "Shared", false);
                     }
                 }
-                await fsc.Files.SetCustomMetadataAsync(fileId, "ShareID", String.Empty);
-                await fsc.Files.SetCustomMetadataAsync(fileId, "Shared", false);
+                await fsc.Files.SetCustomMetadataAsync(elementId, "ShareID", String.Empty);
+                await fsc.Files.SetCustomMetadataAsync(elementId, "Shared", false);
 
 
                 ShareMap f = new ShareMap()
