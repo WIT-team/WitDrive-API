@@ -38,8 +38,8 @@ namespace WitDrive.Controllers
             this.space = long.Parse(config.GetSection("DiskSpace").GetSection("Space").Value);
         }
 
-        [HttpPatch("enable/{fileId}")]
-        public async Task<IActionResult> EnableFileSharing(int userId, string fileId)
+        [HttpPatch("enable")]
+        public async Task<IActionResult> EnableFileSharing(int userId, [FromQuery] string fileId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
@@ -106,8 +106,8 @@ namespace WitDrive.Controllers
             }
         }
 
-        [HttpPatch("disable/{fileId}")]
-        public async Task<IActionResult> DisableFileSharing(int userId, string fileId)
+        [HttpPatch("disable")]
+        public async Task<IActionResult> DisableFileSharing(int userId, [FromQuery] string fileId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {

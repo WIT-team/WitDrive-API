@@ -115,8 +115,8 @@ namespace WitDrive.Controllers
 
         }
 
-        [HttpPatch("rename/{fileId}")]
-        public async Task<IActionResult> RenameFile(int userId, string fileId, [FromQuery] string name)
+        [HttpPatch("rename")]
+        public async Task<IActionResult> RenameFile(int userId,[FromQuery] string fileId, [FromQuery] string name)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {

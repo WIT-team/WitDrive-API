@@ -66,7 +66,7 @@ namespace WitDrive.Controllers
         }
 
         [HttpGet("{dirId}")]
-        public async Task<IActionResult> GetDirectory(string name, string dirId, int userId)
+        public async Task<IActionResult> GetDirectory(string dirId, int userId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
@@ -94,8 +94,8 @@ namespace WitDrive.Controllers
             }
         }
 
-        [HttpPost("create/{dirId}")]
-        public async Task<IActionResult> CreateDirectory([FromQuery] string name, string dirId, int userId)
+        [HttpPost("create")]
+        public async Task<IActionResult> CreateDirectory([FromQuery] string name, [FromQuery] string dirId, int userId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
@@ -128,8 +128,8 @@ namespace WitDrive.Controllers
             }
         }
 
-        [HttpPatch("rename/{dirId}")]
-        public async Task<IActionResult> RenameDirectory([FromQuery] string name, string dirId, int userId)
+        [HttpPatch("rename")]
+        public async Task<IActionResult> RenameDirectory([FromQuery] string name, [FromQuery] string dirId, int userId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
