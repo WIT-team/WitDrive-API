@@ -27,7 +27,6 @@ namespace WitDrive.Controllers
         private readonly IAuthService service;
         private readonly UserManager<User> userManager;
         private readonly SignInManager<User> signInManager;
-        //private readonly FileRepository repo;
         private readonly FileSystemClient fsc;
 
         public AuthController(IConfiguration config, IMapper mapper, IAuthService service,
@@ -38,7 +37,6 @@ namespace WitDrive.Controllers
             this.service = service;
             this.userManager = userManager;
             this.signInManager = signInManager;
-            //this.repo = new FileRepository(config.GetConnectionString("MongoDbConnection"));
             var mongoClient = new MongoDB.Driver.MongoClient(config.GetConnectionString("MongoDbConnection"));
             var database = mongoClient.GetDatabase(nameof(WitDrive));
             this.fsc = new FileSystemClient(database, chunkSize: 32768);

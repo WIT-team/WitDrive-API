@@ -77,7 +77,7 @@ namespace WitDrive.Controllers
             }
         }
 
-        [HttpGet("download/{fileId}")]
+        [HttpGet("{fileId}")]
         public async Task<IActionResult> FileDownload(int userId, string fileId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
@@ -146,7 +146,7 @@ namespace WitDrive.Controllers
         }
 
         [HttpPatch("move")]
-        public async Task<IActionResult> MoveFile([FromQuery] string fileId, [FromQuery] string dirId, int userId)
+        public async Task<IActionResult> MoveFile(int userId, [FromQuery] string fileId, [FromQuery] string dirId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
@@ -182,7 +182,7 @@ namespace WitDrive.Controllers
         }
 
         [HttpPut("copy")]
-        public async Task<IActionResult> CopyFile([FromQuery] string fileId, [FromQuery] string dirId, int userId)
+        public async Task<IActionResult> CopyFile(int userId, [FromQuery] string fileId, [FromQuery] string dirId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
@@ -226,146 +226,6 @@ namespace WitDrive.Controllers
             }
         }
 
-        [HttpPatch("share/{fileId}")]
-        public async Task<IActionResult> EnableFileSharing(int userId, string fileId)
-        {
-            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-            {
-                return Unauthorized();
-            }
-
-            try
-            {
-                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), true, false, false, false))
-                {
-                    return Unauthorized();
-                }
-                var shareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-                var fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(fileId, shareId, true, true, true);
-
-                if (fileInfo.Type == 2)
-                {
-                    var subElems = await fsc.Directories.GetSubelementsAsync(fileInfo.ID);
-                    foreach (var item in subElems)
-                    {
-                        var itemShareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-                        var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, itemShareId, true, true, true);
-
-                        ShareMap tmp0 = new ShareMap();
-                        tmp0.ElementId = item.ID;
-                        tmp0.Type = item.Type;
-                        tmp0.ShareId = itemShareId;
-                        tmp0.Active = true;
-
-                        filesService.Add<ShareMap>(tmp0);
-
-                        await fsc.Files.SetCustomMetadataAsync(item.ID, "ShareID", itemShareId);
-                        await fsc.Files.SetCustomMetadataAsync(item.ID, "Shared", true);
-                    }
-                }
-
-                ShareMap f = new ShareMap()
-                {
-                    ElementId = fileInfo.ID,
-                    Type = fileInfo.Type,
-                    ShareId = shareId,
-                    Active = true
-                };
-
-                filesService.Add<ShareMap>(f);
-
-                await fsc.Files.SetCustomMetadataAsync(fileId, "ShareID", shareId);
-                await fsc.Files.SetCustomMetadataAsync(fileId, "Shared" , true);
-
-                if (await filesService.SaveAll())
-                {
-                    return Ok(shareId);
-                }
-
-                return BadRequest("Failed to share file");
-            }
-            catch(MDBFS.Exceptions.MdbfsElementNotFoundException)
-            {
-                return BadRequest("Unknown file id");
-            }
-            catch (Exception)
-            {
-                return BadRequest("Failed to share file");
-            }
-        }
-
-        [HttpPatch("disable-sharing/{fileId}")]
-        public async Task<IActionResult> DisableFileSharing(int userId, string fileId)
-        {
-            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-            {
-                return Unauthorized();
-            }
-
-            try
-            {
-                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), true, false, false, false))
-                {
-                    return Unauthorized();
-                }
-
-                var fileInfo = await fsc.Files.GetAsync(fileId);
-                var shrId = (string)fileInfo.CustomMetadata["ShareID"];
-                fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(fileId, shrId, false, false, false);
-
-                if (fileInfo.Type == 2)
-                {
-                    var subElems = await fsc.Directories.GetSubelementsAsync(fileInfo.ID);
-                    foreach (var item in subElems)
-                    {
-                        var cstMta = (string)item.CustomMetadata["ShareID"];
-                        var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, cstMta, false, false, false);
-
-                        ShareMap tmp = new ShareMap()
-                        {
-                            ElementId = item.ID,
-                            Type = item.Type,
-                            ShareId = cstMta,
-                            Active = false
-                        };
-
-                        filesService.Update<ShareMap>(tmp);
-
-                        await fsc.Files.SetCustomMetadataAsync(item.ID, "ShareID", String.Empty);
-                        await fsc.Files.SetCustomMetadataAsync(item.ID, "Shared", false);
-                    }
-                }
-                await fsc.Files.SetCustomMetadataAsync(fileId, "ShareID", String.Empty);
-                await fsc.Files.SetCustomMetadataAsync(fileId, "Shared", false);
-
-
-                ShareMap f = new ShareMap()
-                {
-                    ElementId = fileInfo.ID,
-                    Type = fileInfo.Type,
-                    ShareId = shrId,
-                    Active = false
-                };
-
-                filesService.Update<ShareMap>(f);
-
-                if (await filesService.SaveAll())
-                {
-                    return Ok();
-                }
-
-                return BadRequest("Failed to disable file sharing");
-            }
-            catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
-            {
-                return BadRequest("Unknown file id");
-            }
-            catch (Exception)
-            {
-                return BadRequest("Failed to disable file sharing");
-            }
-        }
-
         [HttpDelete("{fileId}")]
         public async Task<IActionResult> FileDelete(int userId, string fileId)
         {
@@ -391,99 +251,6 @@ namespace WitDrive.Controllers
             catch (Exception e)
             {
                 return BadRequest("Failed to delete file");
-            }
-        }
-
-        [HttpGet("get-shared-list")]
-        public async Task<IActionResult> GetSharedList(int userId)
-        {
-            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-            {
-                return Unauthorized();
-            }
-            try
-            {
-                var usr = await fsc.AccessControl.GetUserAsync(userId.ToString());
-
-                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(usr.RootDirectory, userId.ToString(), false, true, false, false))
-                {
-                    return Unauthorized();
-                }
-
-                var query = new ElementSearchQuery();
-                query.CustomMetadata.Add(("Shared", ESearchCondition.Eq, true));
-                var search = await fsc.Directories.FindAsync(usr.RootDirectory, query);
-                var trueSearch = fsc.AccessControl.ModerateSearch(userId.ToString(), search);
-
-                JArray jArray = new JArray();
-
-                foreach (var item in trueSearch)
-                {
-                    jArray.Add(item.ElementToJObject());
-                }
-
-                return Ok(jArray.ToString());
-            }
-            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
-            {
-                return BadRequest("Failed to get shared list");
-            }
-            catch (Exception e)
-            {
-                return BadRequest("Failed to get shared list");
-            }
-        }
-
-        [HttpGet("get-shared-file/{shareId}")]
-        public async Task<IActionResult> GetSharedFile(int userId, string shareId)
-        {
-            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-            {
-                return Unauthorized();
-            }
-
-            var shareInfo = await filesService.GetByShareId(shareId);
-
-            if (!shareInfo.Active)
-            {
-                return BadRequest("Failed to retrieve file info");
-            }
-
-            try
-            {
-                var usr = await fsc.AccessControl.GetUserAsync(userId.ToString());
-
-                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(usr.RootDirectory, userId.ToString(), false, true, false, false))
-                {
-                    return Unauthorized();
-                }
-
-                var query = new ElementSearchQuery();
-                query.CustomMetadata.Add(("ShareID", ESearchCondition.Eq, shareInfo.ElementId));
-                var search = await fsc.Directories.FindAsync(usr.RootDirectory, query);
-                var trueSearch = fsc.AccessControl.ModerateSearch(userId.ToString(), search);
-
-                if (trueSearch.Count() == 0)
-                {
-                    return BadRequest("Failed to retrieve file info");
-                }
-                else
-                {
-                    var element = trueSearch.First();
-                    if (element.Type == 2)
-                    {
-                        return BadRequest("Failed to retrieve file info");
-                    }
-                    return Ok(element.FileToJson());
-                }
-            }
-            catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
-            {
-                return BadRequest("Failed to retrieve file info");
-            }
-            catch (Exception)
-            {
-                return BadRequest("Failed to retrieve file info");
             }
         }
 
