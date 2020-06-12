@@ -69,7 +69,7 @@ namespace WitDrive.Controllers
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
             {
-                return BadRequest("Directory not found");
+                return NotFound("Directory not found");
             }
             catch (Exception e)
             {
@@ -136,7 +136,7 @@ namespace WitDrive.Controllers
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
             {
-                return BadRequest("File not found");
+                return NotFound("File not found");
             }
             catch (Exception e)
             {
@@ -246,7 +246,7 @@ namespace WitDrive.Controllers
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
             {
-                return BadRequest("Unknown file id");
+                return NotFound("Unknown file id");
             }
             catch (Exception e)
             {

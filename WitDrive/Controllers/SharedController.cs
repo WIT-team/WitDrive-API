@@ -80,7 +80,7 @@ namespace WitDrive.Controllers
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
             {
-                return BadRequest("Failed to retrieve share info");
+                return NotFound("Element not found");
             }
             catch (Exception e)
             {

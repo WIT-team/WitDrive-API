@@ -98,7 +98,7 @@ namespace WitDrive.Controllers
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
             {
-                return BadRequest("Unknown file id");
+                return NotFound("Unknown file id");
             }
             catch (Exception)
             {
