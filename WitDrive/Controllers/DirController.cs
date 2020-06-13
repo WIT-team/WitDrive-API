@@ -112,8 +112,8 @@ namespace WitDrive.Controllers
                 var dir = await fsc.Directories.CreateAsync(dirId, name);
                 dir = await fsc.AccessControl.CreateAccessControlAsync(dir.ID, userId.ToString());
 
-                await fsc.Files.SetCustomMetadataAsync(dir.ID, "ShareID", String.Empty);
-                await fsc.Files.SetCustomMetadataAsync(dir.ID, "Shared", false);
+                dir = await fsc.Files.SetCustomMetadataAsync(dir.ID, "ShareID", String.Empty);
+                dir = await fsc.Files.SetCustomMetadataAsync(dir.ID, "Shared", false);
 
                 return Ok(dir.DirToJson(await fsc.Directories.GetSubelementsAsync(dir.ID)));
             }

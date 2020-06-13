@@ -159,7 +159,7 @@ namespace WitDrive.Controllers
                     Active = false
                 };
 
-                filesService.Update<ShareMap>(f);
+                filesService.Delete<ShareMap>(f);
 
                 if (await filesService.SaveAll())
                 {
