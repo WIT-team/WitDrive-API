@@ -42,10 +42,15 @@ namespace MDBFS.Filesystem
             }
         }
 
+        public static bool IsNameValid(string name)
+        {
+            return (!name.Contains('/') && name.Length > 0);
+        }
         public string Root { get; }
 
         public Element Create(string parentId, string name)
         {
+            if (!IsNameValid(name)) throw new MdbfsInvalidNameException();
             var parSearch = _elements.Find(x => x.ID == parentId).ToList();
             if (!parSearch.Any()) throw new MdbfsElementNotFoundException("Parent element not found");
 
@@ -80,8 +85,9 @@ namespace MDBFS.Filesystem
 
         public Element Get(string id)
         {
+            if(id==Root) throw new MdbfsInvalidOperationException();
             var elemSearch = _elements.Find(x => x.ID == id).ToList();
-            if (!elemSearch.Any()) return null; //element not found
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException(); //element not found
             _elements.FindOneAndUpdate(x => x.ID == id, Builders<Element>.Update.Set(x => x.Opened, DateTime.Now));
             var e = elemSearch.First();
             e.Opened = DateTime.Now;
@@ -98,12 +104,49 @@ namespace MDBFS.Filesystem
             return subElSearch.ToArray();
         }
 
+        public List<Element> GetSubElementsRecursive(string id)
+        {
+            var elemSearch = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException(); //element not found
+            var subElSearch = _elements.Find(x => x.ParentID == id && x.Removed == false).ToList();
+            if (!subElSearch.Any()) return new List<Element>(); //no subelements
+            var res = new List<Element>();
+            _elements.FindOneAndUpdate(x => x.ID == id, Builders<Element>.Update.Set(x => x.Opened, DateTime.Now));
+            res.AddRange(subElSearch);
+            foreach (var element in subElSearch)
+            {
+                if(element.Type==2) res.AddRange(GetSubElementsRecursive(element.ID));
+            }
+
+            return res;
+        }
+        public async Task<List<Element>> GetSubElementsRecursiveAsync(string id)
+        {
+            var elemSearch =(await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException(); //element not found
+            var subElSearch =(await _elements.FindAsync(x => x.ParentID == id && x.Removed == false)).ToList();
+            if (!subElSearch.Any()) return new List<Element>(); //no subelements
+            var res = new List<Element>();
+            await _elements.FindOneAndUpdateAsync(x => x.ID == id, Builders<Element>.Update.Set(x => x.Opened, DateTime.Now));
+            res.AddRange(subElSearch);
+            foreach (var element in subElSearch)
+            {
+                if(element.Type==2) res.AddRange(await GetSubElementsRecursiveAsync(element.ID));
+            }
+
+            return res;
+        }
+
         public Element Move(string id, string nParentId)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
             var nParentSearch = _elements.Find(x => x.ID == nParentId && x.Removed == false).ToList();
-            if (!nParentSearch.Any()) return null; //nParent not found
+            if (!nParentSearch.Any()) throw new MdbfsElementNotFoundException(); //nParent not found
             var elemSearch = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
-            if (!elemSearch.Any()) return null; //element not found
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException(); //element not found
+            var a = GetSubElementsRecursive(id);
+            var nParent = nParentSearch.First();
+            if(a.Any(x=>x.ID==nParentId)) throw new MdbfsInvalidOperationException();
             var element = elemSearch.First();
             var element1 = element;
             var alterElemSearch = _elements
@@ -130,21 +173,23 @@ namespace MDBFS.Filesystem
             return element;
         }
 
-        public Element Remove(string id, bool permanently)
+        public void Remove(string id, bool permanently)
         {
-            var elemSearch = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
-            if (!elemSearch.Any()) return null; //not found or already removed
-            var element = elemSearch.First();
 
+            if (id == Root) throw new MdbfsInvalidOperationException();
             if (permanently)
             {
                 var subelements = GetSubelements(id);
                 foreach (var subelem in subelements)
                     if (subelem.Type == 2) Remove(subelem.ID, true);
                     else if (subelem.Type == 1) _files.Remove(subelem.ID, true);
-                var tmp = _elements.DeleteOne(x => x.ID == id);
-                return element;
+                _elements.DeleteOne(x => x.ID == id);
+                return;
+
             }
+            var elemSearch = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
+            if (!elemSearch.Any()) return; //not found or already removed
+            var element = elemSearch.First();
 
             if (element.ParentID != null)
             {
@@ -181,13 +226,13 @@ namespace MDBFS.Filesystem
             element.Metadata[nameof(EMetadataKeys.Deleted)] = deleted;
             _elements.FindOneAndReplace(x => x.ID == id, element);
 
-            return element;
         }
 
         public Element Restore(string id)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
             var elemSearch = _elements.Find(x => x.ID == id && x.Removed).ToList();
-            if (!elemSearch.Any()) return null; //not found or already removed
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException(); //not found or already removed
             var element = elemSearch.First();
 
             var alterSearch = _elements.Find(x =>
@@ -231,12 +276,13 @@ namespace MDBFS.Filesystem
 
         public Element Copy(string id, string nParentId)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
             var elemSearch = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
-            if (!elemSearch.Any()) return null;
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException();
 
             var parentId = nParentId;
             var nParentSearch = _elements.Find(x => x.ID == parentId && x.Removed == false).ToList();
-            if (!nParentSearch.Any()) return null;
+            if (!nParentSearch.Any()) throw new MdbfsElementNotFoundException();
             var element = elemSearch.First();
             var parentId1 = nParentId;
             var parChild = _elements.Find(x => x.ParentID == parentId1 && x.Removed == false && x.Name == element.Name)
@@ -249,10 +295,18 @@ namespace MDBFS.Filesystem
             {
                 var name = element.Name;
                 var meta = element.Metadata;
+                var custMeta = element.CustomMetadata;
                 var element2 = new Element
-                { Name = name, ParentID = nParentId, Removed = false, Type = 2, Metadata = meta };
+                {
+                    Name = name,
+                    ParentID = nParentId,
+                    Removed = false,
+                    Type = 2,
+                    Metadata = meta,
+                    CustomMetadata = custMeta,
+                    Opened = element.Created = element.Modified = DateTime.Now
+                };
 
-                element2.Opened = element.Created = element.Modified = DateTime.Now;
                 _elements.InsertOne(element2);
                 nParentId = element2.ID;
             }
@@ -274,20 +328,34 @@ namespace MDBFS.Filesystem
             return element;
         }
 
-        public Element Rename(string id, string newName)
+        public Element Rename(string id, string nameNew)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
+            if (!IsNameValid(nameNew)) throw new MdbfsInvalidNameException();
             var search = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             var elem = search.First();
-            elem.Name = newName;
-            _elements.UpdateOne(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, newName));
+            elem.Name = nameNew;
+            var searchDupl = _elements.Find(x => x.ParentID == elem.ParentID && x.Name == nameNew);
+            var duplList = searchDupl.ToList();
+
+            var count = 0;
+            while (duplList.Any())
+            {
+                var validName = $"{nameNew}({count})";
+                var validName1 = validName;
+                duplList = _elements.Find(x => x.ParentID == elem.ParentID && x.Name == validName1).ToList();
+                count++;
+            }
+            _elements.UpdateOne(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, nameNew));
             return elem;
         }
 
         public Element SetCustomMetadata(string id, string fieldName, object fieldValue)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             var elem = search.First();
             elem.CustomMetadata[fieldName] = fieldValue;
             _elements.FindOneAndReplace(x => x.ID == id, elem);
@@ -296,8 +364,9 @@ namespace MDBFS.Filesystem
 
         public Element RemoveCustomMetadata(string id, string fieldName)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             _elements.UpdateOne(x => x.ID == id,
                 Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));
             List<Element> search2;
@@ -334,6 +403,7 @@ namespace MDBFS.Filesystem
 
         public async Task<Element> CreateAsync(string parentId, string name)
         {
+            if (!IsNameValid(name)) throw new MdbfsInvalidNameException();
             var parSearch = (await _elements.FindAsync(x => x.ID == parentId)).ToList();
             if (!parSearch.Any()) throw new MdbfsElementNotFoundException("Parent element not found");
 
@@ -368,8 +438,9 @@ namespace MDBFS.Filesystem
 
         public async Task<Element> GetAsync(string id)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
             var elemSearch = (await _elements.FindAsync(x => x.ID == id)).ToList();
-            if (!elemSearch.Any()) return null; //element not found
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException(); //element not found
             await _elements.FindOneAndUpdateAsync(x => x.ID == id, Builders<Element>.Update.Set(x => x.Opened, DateTime.Now));
             var e = elemSearch.First();
             e.Opened = DateTime.Now;
@@ -386,12 +457,18 @@ namespace MDBFS.Filesystem
             return subElSearch.ToArray();
         }
 
+
         public async Task<Element> MoveAsync(string id, string nParentId)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
             var nParentSearch = (await _elements.FindAsync(x => x.ID == nParentId && x.Removed == false)).ToList();
-            if (!nParentSearch.Any()) return null; //nParent not found
+            if (!nParentSearch.Any()) throw new MdbfsElementNotFoundException(); //nParent not found
             var elemSearch = (await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
-            if (!elemSearch.Any()) return null; //element not found
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException(); //element not found
+
+            var a = await GetSubElementsRecursiveAsync(id);
+            var nParent = nParentSearch.First();
+            if (a.Any(x => x.ID == nParentId)) throw new MdbfsInvalidOperationException();
             var element = elemSearch.First();
             var element1 = element;
             var alterElemSearch = (await _elements
@@ -418,20 +495,22 @@ namespace MDBFS.Filesystem
             return element;
         }
 
-        public async Task<Element> RemoveAsync(string id, bool permanently)
+        public async Task RemoveAsync(string id, bool permanently)
         {
+
+            if (id == Root) throw new MdbfsInvalidOperationException();
             if (permanently)
             {
                 var subelements = await GetSubelementsAsync(id);
                 foreach (var subelem in subelements)
                     if (subelem.Type == 2) await RemoveAsync(subelem.ID, true);
                     else if (subelem.Type == 1) await _files.RemoveAsync(subelem.ID, true);
-                var tmp = await _elements.DeleteOneAsync(x => x.ID == id);
-                return null;
-            }
+                await _elements.DeleteOneAsync(x => x.ID == id);
+                return ;
 
+            }
             var elemSearch =(await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
-            if (!elemSearch.Any()) return null; //not found or already removed
+            if (!elemSearch.Any()) return ; //not found or already removed
             var element = elemSearch.First();
 
             if (element.ParentID != null)
@@ -469,13 +548,13 @@ namespace MDBFS.Filesystem
             element.Metadata[nameof(EMetadataKeys.Deleted)] = deleted;
             await _elements.FindOneAndReplaceAsync(x => x.ID == id, element);
 
-            return element;
         }
 
         public async Task<Element> RestoreAsync(string id)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
             var elemSearch =(await _elements.FindAsync(x => x.ID == id && x.Removed)).ToList();
-            if (!elemSearch.Any()) return null; //not found or already removed
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException(); //not found or already removed
             var element = elemSearch.First();
 
             var alterSearch =(await _elements.FindAsync(x =>
@@ -517,14 +596,16 @@ namespace MDBFS.Filesystem
             return element;
         }
 
-        public async Task<Element> CopyAsync(string id, string nParentId)
+        public async Task<List<Element>> CopyAsync(string id, string nParentId)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
             var elemSearch =(await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
-            if (!elemSearch.Any()) return null;
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException();
 
             var parentId = nParentId;
             var nParentSearch =(await _elements.FindAsync(x => x.ID == parentId && x.Removed == false)).ToList();
-            if (!nParentSearch.Any()) return null;
+            if (!nParentSearch.Any()) throw new MdbfsElementNotFoundException();
+            var copied = new List<Element>();
             var element = elemSearch.First();
             var parentId1 = nParentId;
             var parChild =(await _elements.FindAsync(x => x.ParentID == parentId1 && x.Removed == false && x.Name == element.Name)).ToList();
@@ -536,6 +617,7 @@ namespace MDBFS.Filesystem
             {
                 var name = element.Name;
                 var meta = element.Metadata;
+                var custMeta = element.CustomMetadata;
                 var element2 = new Element
                 {
                     Name = name,
@@ -543,6 +625,7 @@ namespace MDBFS.Filesystem
                     Removed = false,
                     Type = 2,
                     Metadata = meta,
+                    CustomMetadata = custMeta,
                     Opened = element.Created = element.Modified = DateTime.Now
                 };
 
@@ -557,30 +640,43 @@ namespace MDBFS.Filesystem
             await _elements.UpdateOneAsync(x => x.ID == nParentId,
                 Builders<Element>.Update.Combine(Builders<Element>.Update.Set(x => x.Opened, date),
                     Builders<Element>.Update.Set(x => x.Modified, date)));
-
+            copied.Add(element);
             var subelements = await GetSubelementsAsync(element.ID);
-            if (!subelements.Any()) return element;
+            if (!subelements.Any()) return copied;
             foreach (var subelement in subelements)
-                if (subelement.Type == 2) await CopyAsync(subelement.ID, nParentId);
-                else if (subelement.Type == 1) await _files.CopyAsync(subelement.ID, nParentId);
+                if (subelement.Type == 2) copied.AddRange( await CopyAsync(subelement.ID, nParentId));
+                else if (subelement.Type == 1)copied.Add( await _files.CopyAsync(subelement.ID, nParentId));
 
-            return element;
+            return copied;
         }
 
-        public async Task<Element> RenameAsync(string id, string newName)
+        public async Task<Element> RenameAsync(string id, string nameNew)
         {
+            if (id == Root) throw new MdbfsInvalidOperationException();
+            if (!IsNameValid(nameNew)) throw new MdbfsInvalidNameException();
             var search =(await  _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             var elem = search.First();
-            elem.Name = newName;
-            await _elements.UpdateOneAsync(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, newName));
+            elem.Name = nameNew;
+            var searchDupl =await _elements.FindAsync(x => x.ParentID == elem.ParentID && x.Name == nameNew);
+            var duplList = searchDupl.ToList();
+
+            var count = 0;
+            while (duplList.Any())
+            {
+                var validName = $"{nameNew}({count})";
+                var validName1 = validName;
+                duplList = _elements.Find(x => x.ParentID == elem.ParentID && x.Name == validName1).ToList();
+                count++;
+            }
+            await _elements.UpdateOneAsync(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, nameNew));
             return elem;
         }
 
         public async Task<Element> SetCustomMetadataAsync(string id, string fieldName, object fieldValue)
         {
             var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             var elem = search.First();
             elem.CustomMetadata[fieldName] = fieldValue;
             await _elements.FindOneAndReplaceAsync(x => x.ID == id, elem);
@@ -590,7 +686,7 @@ namespace MDBFS.Filesystem
         public async Task<Element> RemoveCustomMetadataAsync(string id, string fieldName)
         {
             var search =(await  _elements.FindAsync(x => x.ID == id)).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             await _elements.UpdateOneAsync(x => x.ID == id,
                 Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));
             List<Element> search2;
@@ -854,9 +950,8 @@ namespace MDBFS.Filesystem
 
             return filters;
         }
-
         private static IEnumerable<FilterDefinition<Element>> GenerateForCustomMetadata(
-           IEnumerable<(string fieldName, ESearchCondition condition, object value)> cond)
+            IEnumerable<(string fieldName, ESearchCondition condition, object value)> cond)
         {
             var filters = new List<FilterDefinition<Element>>();
 

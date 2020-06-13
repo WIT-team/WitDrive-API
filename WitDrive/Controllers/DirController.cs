@@ -255,5 +255,55 @@ namespace WitDrive.Controllers
                 return BadRequest("Failed to move directory");
             }
         }
+
+        [HttpPut("copy")]
+        public async Task<IActionResult> CopyDirectory([FromQuery] string dirId, [FromQuery] string dstDirId, int userId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+            if (dirId == fsc.Directories.Root)
+            {
+                return BadRequest("Invalid operation");
+            }
+            try
+            {
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(dirId, userId.ToString(), false, true, true, false))
+                {
+                    return Unauthorized();
+                }
+
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(dstDirId, userId.ToString(), false, true, true, true))
+                {
+                    return Unauthorized();
+                }
+
+                var tmp = await fsc.Directories.GetSubElementsRecursiveAsync(dirId);
+                long length = 0;
+
+                foreach (var item in tmp.Where(x => x.Type == 1))
+                {
+                    length += (long)item.Metadata[nameof(EMetadataKeys.Length)];
+                }
+
+                if (await fsc.AccessControl.CalculateDiskUsageAsync(userId.ToString()) + length > space)
+                {
+                    return Unauthorized("Not enough space");
+                }
+
+                var deb = await fsc.Directories.CopyAsync(dirId, dstDirId);
+
+                return Ok();
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return BadRequest("Directory not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to copy directory");
+            }
+        }
     }
 }

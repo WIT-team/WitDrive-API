@@ -19,7 +19,7 @@ namespace MDBFS.Filesystem
         private readonly IMongoCollection<Element> _elements;
         private readonly BinaryStorageClient _binaryStorage;
         private NamedReaderWriterLock _nrwl;
-
+        
         public Files(IMongoCollection<Element> elements, int binaryStorageBufferLength = 1024, int chunkSize = 1048576)
         {
             _elements = elements;
@@ -29,6 +29,10 @@ namespace MDBFS.Filesystem
             foreach (var map in tmp0) _elements.DeleteOne(x => x.ID == map.ID);
         }
 
+        public static bool IsNameValid(string name)
+        {
+            return (!name.Contains('/') && name.Length > 0);
+        }
         private Element PrepareElement(string parentId, string name)
         {
             // ReSharper disable once AccessToModifiedClosure
@@ -63,8 +67,9 @@ namespace MDBFS.Filesystem
 
         public Element Create(string parentId, string name, byte[] data)
         {
+            if(!IsNameValid(name)) throw new MdbfsInvalidNameException();
             var elemSearch = _elements.Find(x => x.ID == parentId && x.Removed == false).ToList();
-            if (elemSearch.Count == 0) return null; //parent does not exist
+            if (elemSearch.Count == 0) throw new MdbfsElementNotFoundException(); //parent does not exist
             var elem = PrepareElement(parentId, name);
             using (var stream = _binaryStorage.OpenUploadStream())
             {
@@ -80,8 +85,9 @@ namespace MDBFS.Filesystem
 
         public async Task<Element> CreateAsync(string parentId, string name, byte[] data)
         {
+            if (!IsNameValid(name)) throw new MdbfsInvalidNameException();
             var elemSearch = (await _elements.FindAsync(x => x.ID == parentId && x.Removed == false)).ToList();
-            if (elemSearch.Count == 0) return null; //parent does not exist
+            if (elemSearch.Count == 0) throw new MdbfsElementNotFoundException(); //parent does not exist
             var elem = await PrepareElementAsync(parentId, name);
             await using (var stream = await _binaryStorage.OpenUploadStreamAsync())
             {
@@ -97,6 +103,7 @@ namespace MDBFS.Filesystem
 
         private async Task<Element> PrepareElementAsync(string parentId, string name)
         {
+            if (!IsNameValid(name)) throw new MdbfsInvalidNameException();
             // ReSharper disable once AccessToModifiedClosure
             var nDupSearch = (await _elements.FindAsync(x => x.ParentID == parentId && x.Name == name)).ToList();
             string validName = null;
@@ -129,8 +136,9 @@ namespace MDBFS.Filesystem
 
         public Element Create(string parentId, string name, Stream stream)
         {
+            if (!IsNameValid(name)) throw new MdbfsInvalidNameException();
             var elemSearch = _elements.Find(x => x.ID == parentId && x.Removed == false).ToList();
-            if (elemSearch.Count == 0) return null; //parent does not exist
+            if (elemSearch.Count == 0) throw new MdbfsElementNotFoundException(); //parent does not exist
             var elem = PrepareElement(parentId, name);
             var id = _binaryStorage.UploadFromStream(stream);
             elem.ID = id;
@@ -141,8 +149,9 @@ namespace MDBFS.Filesystem
 
         public async Task<Element> CreateAsync(string parentId, string name, Stream stream, bool streamSupportsAsync)
         {
+            if (!IsNameValid(name)) throw new MdbfsInvalidNameException();
             var elemSearch = (await _elements.FindAsync(x => x.ID == parentId && x.Removed == false)).ToList();
-            if (!elemSearch.Any()) return null; //parent does not exist
+            if (!elemSearch.Any()) throw new MdbfsElementNotFoundException(); //parent does not exist
             var elem = await PrepareElementAsync(parentId, name);
             var (id, _) = await _binaryStorage.UploadFromStreamAsync(stream, streamSupportsAsync);
             elem.ID = id;
@@ -153,6 +162,7 @@ namespace MDBFS.Filesystem
 
         public FileUploadStream OpenFileUploadStream(string parentId, string name)
         {
+            if (!IsNameValid(name)) throw new MdbfsInvalidNameException();
             return new FileUploadStream(_binaryStorage.OpenUploadStream(), _elements,
                 Element.Create(null, parentId, 1, name,
                     new Dictionary<string, object> { { nameof(EMetadataKeys.Length), 0L } }, null));
@@ -160,6 +170,7 @@ namespace MDBFS.Filesystem
 
         public async Task<FileUploadStream> OpenFileUploadStreamAsync(string parentId, string name)
         {
+            if (!IsNameValid(name)) throw new MdbfsInvalidNameException();
             return new FileUploadStream(await _binaryStorage.OpenUploadStreamAsync(), _elements,
                 Element.Create(null, parentId, 1, name,
                     new Dictionary<string, object> { { nameof(EMetadataKeys.Length), 0L } }, null));
@@ -297,7 +308,7 @@ namespace MDBFS.Filesystem
             if (elemSearch.Count == 0)
             {
                 _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             } //element not found
 
             var element = elemSearch.First();
@@ -367,13 +378,13 @@ namespace MDBFS.Filesystem
                 if (elemSearch.Count == 0)
                 {
                     await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
-                    return null;
+                    throw new MdbfsElementNotFoundException();
                 } //element not found
                 f = elemSearch.First();
                 if (f.Removed == false)
                 {
                     await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
-                    return null;
+                    throw new MdbfsElementNotFoundException();
                 } // element is not removed
 
                 var originalLocationNames = (string)f.Metadata[nameof(EMetadataKeys.PathNames)];
@@ -427,12 +438,12 @@ namespace MDBFS.Filesystem
         public Element Copy(string id, string parentId)
         {
             var lId = _nrwl.AcquireWriterLock($"{nameof(Files)}.{id}");
-            if (!_elements.Find(x => x.ID == parentId && x.Removed == false).Any()) return null; //parent not found
+            if (!_elements.Find(x => x.ID == parentId && x.Removed == false).Any()) throw new MdbfsElementNotFoundException(); //parent not found
             var eleSearch = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
             if (eleSearch.Count == 0)
             {
                 _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             } //element not found
             var mElem = eleSearch.First();
 
@@ -442,31 +453,38 @@ namespace MDBFS.Filesystem
             if (nId == null)
             {
                 _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             }
             var date = DateTime.Now;
             var nName = mElem.Name;
+
+            var tmp0 = nName.Contains('.') ? nName.Substring(0, nName.LastIndexOf('.')) : "";
+            var tmp1 = nName.Contains('.') ? nName.Substring(nName.LastIndexOf('.'), nName.Length - nName.LastIndexOf('.')) : "";
 
             // ReSharper disable once AccessToModifiedClosure
             if (_elements.Find(x => x.ParentID == parentId && x.Name == nName).Any())
             {
                 long counter = 0;
+                var validName = nName.Contains('.') ? $"{tmp0}_Copy{tmp1}" : $"{nName}({nName})";
                 // ReSharper disable once AccessToModifiedClosure
-                if (_elements.Find(x => x.ParentID == parentId && x.Name == $"{nName}_Copy").Any())
+                if (_elements.Find(x => x.ParentID == parentId && x.Name == validName).Any())
+                {
                     // ReSharper disable once AccessToModifiedClosure
                     while (_elements.Find(x => x.ParentID == parentId && x.Name == nName).Any())
                     {
-                        var nName2 = $"{nName}_Copy({counter})";
-                        if (!_elements.Find(x => x.ParentID == parentId && x.Name == nName2).Any())
+                        validName = nName.Contains('.') ? $"{tmp0}_Copy({counter}){tmp1}" : $"{nName}({nName})";
+                        if (!_elements.Find(x => x.ParentID == parentId && x.Name == validName).Any())
                         {
-                            nName = nName2;
+                            nName = validName;
                             break;
                         }
 
                         counter++;
                     }
+                    nName = validName;
+                }
                 else
-                    nName = $"{nName}_Copy";
+                    nName = validName;
             }
 
             var f = new Element
@@ -479,7 +497,8 @@ namespace MDBFS.Filesystem
                 Modified = date,
                 Opened = date,
                 Removed = false,
-                Metadata = mElem.Metadata
+                Metadata = mElem.Metadata,
+                CustomMetadata = mElem.CustomMetadata,
             };
             _elements.InsertOne(f);
             _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
@@ -492,13 +511,13 @@ namespace MDBFS.Filesystem
             if (!await (await _elements.FindAsync(x => x.ID == parentId && x.Removed == false)).AnyAsync())
             {
                 await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             } //parent not found
             var eleSearch = (await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
             if (!eleSearch.Any())
             {
                 await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             } //element not found
             var mElem = eleSearch.First();
 
@@ -508,31 +527,40 @@ namespace MDBFS.Filesystem
             if (nId == null)
             {
                 await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             }
             var date = DateTime.Now;
 
             var nName = mElem.Name;
 
-            if (await (await _elements.FindAsync(x => x.ParentID == parentId && x.Name == nName)).AnyAsync())
+            var tmp0 = nName.Contains('.') ? nName.Substring(0, nName.LastIndexOf('.')) : "";
+            var tmp1 = nName.Contains('.') ? nName.Substring(nName.LastIndexOf('.'), nName.Length - nName.LastIndexOf('.')) : "";
+
+            // ReSharper disable once AccessToModifiedClosure
+            if (await _elements.Find(x => x.ParentID == parentId && x.Name == nName).AnyAsync())
             {
                 long counter = 0;
-                if (await (await _elements.FindAsync(x => x.ParentID == parentId && x.Name == $"{nName}_Copy")).AnyAsync())
-                    while (await (await _elements.FindAsync(x => x.ParentID == parentId && x.Name == nName)).AnyAsync())
+                var validName = nName.Contains('.') ? $"{tmp0}_Copy{tmp1}" : $"{nName}({nName})";
+                // ReSharper disable once AccessToModifiedClosure
+                if (await _elements.Find(x => x.ParentID == parentId && x.Name == validName).AnyAsync())
+                {
+                    // ReSharper disable once AccessToModifiedClosure
+                    while (await _elements.Find(x => x.ParentID == parentId && x.Name == nName).AnyAsync())
                     {
-                        var nName2 = $"{nName}_Copy({counter})";
-                        if (!await (await _elements.FindAsync(x => x.ParentID == parentId && x.Name == nName2)).AnyAsync())
+                        validName = nName.Contains('.') ? $"{tmp0}_Copy({counter}){tmp1}" : $"{nName}({nName})";
+                        if (!await _elements.Find(x => x.ParentID == parentId && x.Name == validName).AnyAsync())
                         {
-                            nName = nName2;
+                            nName = validName;
                             break;
                         }
 
                         counter++;
                     }
+                    nName = validName;
+                }
                 else
-                    nName = $"{nName}_Copy";
+                    nName = validName;
             }
-
             var f = new Element
             {
                 ID = nId,
@@ -543,7 +571,8 @@ namespace MDBFS.Filesystem
                 Modified = date,
                 Opened = date,
                 Removed = false,
-                Metadata = mElem.Metadata
+                Metadata = mElem.Metadata,
+                CustomMetadata = mElem.CustomMetadata,
             };
             await _elements.InsertOneAsync(f);
             await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
@@ -557,14 +586,14 @@ namespace MDBFS.Filesystem
             if (!parSearch.Any())
             {
                 _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             } //parent not found
 
             var elemSearch = _elements.Find(x => x.ID == id && x.Removed == false);
             if (!elemSearch.Any())
             {
                 _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             } //element not found
 
             var f = elemSearch.First();
@@ -582,14 +611,14 @@ namespace MDBFS.Filesystem
             if (!parSearch.Any())
             {
                 await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             }//parent not found
 
             var elemSearch = (await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
             if (!elemSearch.Any())
             {
                 await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             } //element not found
 
             var f = elemSearch.First();
@@ -600,18 +629,30 @@ namespace MDBFS.Filesystem
             return f;
         }
 
-        public Element Rename(string id, string newName)
+        public Element Rename(string id, string nameNew)
         {
             var lId = _nrwl.AcquireWriterLock($"{nameof(Files)}.{id}");
             var search = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
             if (!search.Any())
             {
                 _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             }
             var elem = search.First();
-            elem.Name = newName;
-            _elements.UpdateOne(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, newName));
+            var nDupSearch = _elements.Find(x => x.ParentID == elem.ParentID && x.Name == nameNew).ToList();
+            string validName = null;
+            var count = 0;
+            var tmp0 = nameNew.Contains('.') ? nameNew.Substring(0, nameNew.LastIndexOf('.')) : "";
+            var tmp1 = nameNew.Contains('.') ? nameNew.Substring(nameNew.LastIndexOf('.'), nameNew.Length - nameNew.LastIndexOf('.')) : "";
+            while (nDupSearch.Any())
+            {
+                validName = nameNew.Contains('.') ? $"{tmp0}({count}){tmp1}" : $"{nameNew}({count})";
+                // ReSharper disable once AccessToModifiedClosure
+                nDupSearch = _elements.Find(x => x.ParentID == elem.ParentID && x.Name == validName).ToList();
+                count++;
+            }
+            elem.Name = validName;
+            _elements.UpdateOne(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, nameNew));
             _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
             return elem;
         }
@@ -622,7 +663,7 @@ namespace MDBFS.Filesystem
             if (!search.Any())
             {
                 _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             }
             _elements.UpdateOne(x => x.ID == id,
                 Builders<Element>.Update.Set(x => x.CustomMetadata[fieldName], fieldValue));
@@ -638,7 +679,7 @@ namespace MDBFS.Filesystem
             if (!search.Any())
             {
                 _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             }
             _elements.UpdateOne(x => x.ID == id,
                 Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));
@@ -647,18 +688,30 @@ namespace MDBFS.Filesystem
             return (search2 = _elements.Find(x => x.ID == id).ToList()).Any() ? search2.First() : null;
         }
 
-        public async Task<Element> RenameAsync(string id, string newName)
+        public async Task<Element> RenameAsync(string id, string nameNew)
         {
             var lId = await _nrwl.AcquireWriterLockAsync($"{nameof(Files)}.{id}");
             var search = (await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
             if (!search.Any())
             {
                 await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             }
-            var elem = search.First();
-            elem.Name = newName;
-            await _elements.UpdateOneAsync(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, newName));
+            var elem = search.First(); string validName = null;
+
+            var nDupSearch = _elements.Find(x => x.ParentID == elem.ParentID && x.Name == nameNew).ToList();
+            var count = 0;
+            var tmp0 = nameNew.Contains('.') ? nameNew.Substring(0, nameNew.LastIndexOf('.')) : "";
+            var tmp1 = nameNew.Contains('.') ? nameNew.Substring(nameNew.LastIndexOf('.'), nameNew.Length - nameNew.LastIndexOf('.')) : "";
+            while (nDupSearch.Any())
+            {
+                validName = nameNew.Contains('.') ? $"{tmp0}({count}){tmp1}" : $"{nameNew}({count})";
+                // ReSharper disable once AccessToModifiedClosure
+                nDupSearch = _elements.Find(x => x.ParentID == elem.ParentID && x.Name == validName).ToList();
+                count++;
+            }
+            elem.Name = validName;
+            await _elements.UpdateOneAsync(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, nameNew));
             await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
             return elem;
         }
@@ -670,7 +723,7 @@ namespace MDBFS.Filesystem
             if (!search.Any())
             {
                 await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             }
             await _elements.UpdateOneAsync(x => x.ID == id,
                 Builders<Element>.Update.Set(x => x.CustomMetadata[fieldName], fieldValue));
@@ -686,7 +739,7 @@ namespace MDBFS.Filesystem
             if (!search.Any())
             {
                 await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             }
             await _elements.UpdateOneAsync(x => x.ID == id,
                 Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));

@@ -241,11 +241,11 @@ namespace MDBFS.FileSystem.BinaryStorage
             {
                 _nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId2);
                 _nrwl.ReleaseLock($"{nameof(Chunk)}.{id}", lId);
-                return null;
+                throw new MdbfsElementNotFoundException();
             } //not found
 
             var map = mapSearch.First();
-            var nMap = new ChunkMap {ChunksIDs = new List<string>(), Length = map.Length, Removed = false};
+            var nMap = new ChunkMap {ChunksIDs = new List<string>(), Length = map.Length, Removed = false };
             var chunksSearch = _chunks.Find(Builders<Chunk>.Filter.Where(x => map.ChunksIDs.Contains(x.ID)));
             var nChunks = chunksSearch.ToEnumerable().Select(ch => new Chunk {Bytes = ch.Bytes}).ToList();
             _chunks.InsertMany(nChunks);
@@ -263,11 +263,11 @@ namespace MDBFS.FileSystem.BinaryStorage
             if (!mapSearch.Any())
             {
                 await _nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId2);
-                return null;
+                throw new MdbfsElementNotFoundException();
             } //not found
 
             var map = mapSearch.First();
-            var nMap = new ChunkMap {ChunksIDs = new List<string>(), Length = map.Length, Removed = false};
+            var nMap = new ChunkMap {ChunksIDs = new List<string>(), Length = map.Length,Removed = false};
             var chunksSearch = await _chunks.FindAsync(Builders<Chunk>.Filter.Where(x => map.ChunksIDs.Contains(x.ID)));
             var nChunks = new List<Chunk>();
 
