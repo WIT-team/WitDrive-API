@@ -79,5 +79,40 @@ namespace WitDrive.Controllers
 
             return BadRequest(result.Errors);
         }
+
+        [HttpDelete]
+        public async Task<IActionResult> DeleteAccount(int userId, DeleteAccDto deleteAccDto)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+
+            User appUser = await userManager.GetUserAsync(this.User);
+
+            var res = await userManager.CheckPasswordAsync(appUser, deleteAccDto.Password);
+            if (!res)
+            {
+                return Unauthorized();
+            }
+
+            var result = await userManager.DeleteAsync(appUser);
+
+            if (result.Succeeded)
+            {
+                try
+                {
+                    await fsc.AccessControl.RemoveUserAsync(userId.ToString());
+                }
+                catch (Exception)
+                {
+                    return BadRequest("Invalid request");
+                }
+                return Ok();
+            }
+
+            return BadRequest(result.Errors);
+
+        }
     }
 }

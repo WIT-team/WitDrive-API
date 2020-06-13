@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using MDBFS.Exceptions;
 using MDBFS.Filesystem.AccessControl.Models;
 using MDBFS.Filesystem.Models;
 using MDBFS.Misc;
@@ -36,7 +37,7 @@ namespace MDBFS.Filesystem.AccessControl
         public User CreateUser(string username, bool admin)
         {
             var search = _users.Find(x => x.Username == username).ToList();
-            if (search.Any()) return null;
+            if (search.Any()) throw new MdbfsUserNotFoundException();
 
             var elem = _directories.Create(_directories.Root, username);
             elem = CreateAccessControl(elem.ID, username);
@@ -55,13 +56,13 @@ namespace MDBFS.Filesystem.AccessControl
         public User GetUser(string username)
         {
             var search = _users.Find(x => x.Username == username).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsUserNotFoundException();
             return search.First();
         }
         public Element CreateAccessControl(string id, string username)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             var element = search.First();
             element.Metadata[nameof(OwnerId)] = username;
             element.Metadata[nameof(OtherUsers)] = 0b00000000;
@@ -81,7 +82,7 @@ namespace MDBFS.Filesystem.AccessControl
         public Element RemoveAccessControl(string id)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             var element = search.First();
             if (element.Metadata.ContainsKey(nameof(OwnerId)))
                 element.Metadata.Remove(nameof(OwnerId));
@@ -127,7 +128,7 @@ namespace MDBFS.Filesystem.AccessControl
         }
         public Group CreateGroup(string name)
         {
-            if (_groups.Find(x => x.Name == name).Any()) return null;
+            if (_groups.Find(x => x.Name == name).Any()) throw new MdbfsGroupNotFoundException();
             var group = new Group
             {
                 Name = name,
@@ -175,9 +176,9 @@ namespace MDBFS.Filesystem.AccessControl
         public Group AddUserToGroup(string groupName, string username)
         {
             var search = _groups.Find(x => x.Name == groupName).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsGroupNotFoundException();
             var searchUsr = _users.Find(x => x.Username == username).ToList();
-            if (!searchUsr.Any()) return null;
+            if (!searchUsr.Any()) throw new MdbfsUserNotFoundException();
 
             _users.UpdateOne(x => x.Username == username, Builders<User>.Update.Push(x => x.MemberOf, groupName));
             _groups.UpdateOne(x => x.Name == groupName, Builders<Group>.Update.Push(x => x.Members, username));
@@ -189,9 +190,9 @@ namespace MDBFS.Filesystem.AccessControl
         public Group RemoveUserFromGroup(string groupName, string username)
         {
             var search = _groups.Find(x => x.Name == groupName).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsGroupNotFoundException();
             var searchUsr = _users.Find(x => x.Username == username).ToList();
-            if (!searchUsr.Any()) return null;
+            if (!searchUsr.Any()) throw new MdbfsUserNotFoundException();
 
             if (searchUsr.First().MemberOf.Contains(groupName))
                 _users.UpdateOne(x => x.Username == username, Builders<User>.Update.Pull(x => x.MemberOf, groupName));
@@ -205,7 +206,7 @@ namespace MDBFS.Filesystem.AccessControl
         public Element AuthorizeToken(string id, string token, bool read, bool write, bool execute)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             byte rights = 0;
             if (read) rights = (byte)(rights | 0b00000100);
             if (write) rights = (byte)(rights | 0b00000010);
@@ -219,7 +220,7 @@ namespace MDBFS.Filesystem.AccessControl
         public Element AuthorizeUser(string id, string username, bool changeRights, bool read, bool write, bool execute)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             byte rights = 0;
             if (changeRights) rights = (byte)(rights | 0b00001000);
             if (read) rights = (byte)(rights | 0b00000100);
@@ -236,7 +237,7 @@ namespace MDBFS.Filesystem.AccessControl
         public Element AuthorizeGroup(string id, string groupName, bool changeRights, bool read, bool write, bool execute)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             var elem = search.First();
             byte rights = 0;
             if (changeRights) rights = (byte)(rights | 0b00001000);
@@ -335,7 +336,7 @@ namespace MDBFS.Filesystem.AccessControl
         {
             var search =(await _users.FindAsync(x => x.Username == username))
                 .ToList();
-            if (search.Any()) return null;
+            if (search.Any()) throw new MdbfsUserNotFoundException();
 
             var elem = await _directories.CreateAsync(_directories.Root, username);
             elem = await CreateAccessControlAsync(elem.ID, username);
@@ -359,7 +360,7 @@ namespace MDBFS.Filesystem.AccessControl
         public async Task<Element> CreateAccessControlAsync(string id, string username)
         {
             var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             var element = search.First();
             element.Metadata[nameof(OwnerId)] = username;
             element.Metadata[nameof(OtherUsers)] = 0b00000000;
@@ -379,7 +380,7 @@ namespace MDBFS.Filesystem.AccessControl
         public async Task<Element> RemoveAccessControlAsync(string id)
         {
             var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             var element = search.First();
             if (element.Metadata.ContainsKey(nameof(OwnerId)))
                 element.Metadata.Remove(nameof(OwnerId));
@@ -425,7 +426,7 @@ namespace MDBFS.Filesystem.AccessControl
         }
         public async Task<Group> CreateGroupAsync(string name)
         {
-            if (await _groups.Find(x => x.Name == name).AnyAsync()) return null;
+            if (await _groups.Find(x => x.Name == name).AnyAsync()) throw new MdbfsGroupNotFoundException();
             var group = new Group
             {
                 Name = name,
@@ -460,22 +461,22 @@ namespace MDBFS.Filesystem.AccessControl
             var filterGroups = Builders<Group>.Filter.Where(x => x.Members.Contains(username));
             var updateGroups = Builders<Group>.Update.Pull(x => x.Members, username);
 
-            var filter = Builders<Element>.Filter.Where(x =>
-                ((Dictionary<string, byte>)x.Metadata[nameof(Users)]).ContainsKey(username));
+            var filter = Builders<Element>.Filter.Where(x => usr.Permissions.Contains(x.ID));
             var update = Builders<Element>.Update.PullFilter(
                 x => (Dictionary<string, byte>)x.Metadata[nameof(Users)], x => x.Key == username);
 
             await _groups.UpdateManyAsync(filterGroups, updateGroups);
-            await _elements.UpdateManyAsync(filter, update);
+            //await _elements.UpdateManyAsync(filter, update);
             await _directories.RemoveAsync(usr.RootDirectory, true);
+            await _users.DeleteOneAsync(username);
         }
 
         public async Task<Group> AddUserToGroupAsync(string groupName, string username)
         {
             var search = _groups.Find(x => x.Name == groupName).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsGroupNotFoundException();
             var searchUsr = _users.Find(x => x.Username == username).ToList();
-            if (!searchUsr.Any()) return null;
+            if (!searchUsr.Any()) throw new MdbfsUserNotFoundException();
 
             await _users.UpdateOneAsync(x => x.Username == username, Builders<User>.Update.Push(x => x.MemberOf, groupName));
             await _groups.UpdateOneAsync(x => x.Name == groupName, Builders<Group>.Update.Push(x => x.Members, username));
@@ -487,9 +488,9 @@ namespace MDBFS.Filesystem.AccessControl
         public async Task<Group> RemoveUserFromGroupAsync(string groupName, string username)
         {
             var search = _groups.Find(x => x.Name == groupName).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsGroupNotFoundException();
             var searchUsr = _users.Find(x => x.Username == username).ToList();
-            if (!searchUsr.Any()) return null;
+            if (!searchUsr.Any()) throw new MdbfsUserNotFoundException();
 
             if (searchUsr.First().MemberOf.Contains(groupName))
                 await _users.UpdateOneAsync(x => x.Username == username, Builders<User>.Update.Pull(x => x.MemberOf, groupName));
@@ -503,7 +504,7 @@ namespace MDBFS.Filesystem.AccessControl
         public async Task<Element> AuthorizeTokenAsync(string id, string token, bool read, bool write, bool execute)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             byte rights = 0;
             if (read) rights = (byte)(rights | 0b00000100);
             if (write) rights = (byte)(rights | 0b00000010);
@@ -517,7 +518,7 @@ namespace MDBFS.Filesystem.AccessControl
         public async Task<Element> AuthorizeUserAsync(string id, string username, bool changeRights, bool read, bool write, bool execute)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             byte rights = 0;
             if (changeRights) rights = (byte)(rights | 0b00001000);
             if (read) rights = (byte)(rights | 0b00000100);
@@ -527,6 +528,8 @@ namespace MDBFS.Filesystem.AccessControl
             var elem = search.First();
             if (rights == 0) (elem.Metadata[nameof(Users)] as Dictionary<string, byte>).Remove(username);
             else (elem.Metadata[nameof(Users)] as Dictionary<string, byte>)[username] = rights;
+            await _users.UpdateOneAsync(x => x.Username == username,
+                Builders<User>.Update.Push(x => x.Permissions, elem.ID));
             await _elements.FindOneAndReplaceAsync(x => x.ID == id, elem);
             return elem;
         }
@@ -534,7 +537,7 @@ namespace MDBFS.Filesystem.AccessControl
         public async Task<Element> AuthorizeGroupAsync(string id, string groupName, bool changeRights, bool read, bool write, bool execute)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any()) throw new MdbfsElementNotFoundException();
             var elem = search.First();
             byte rights = 0;
             if (changeRights) rights = (byte)(rights | 0b00001000);
