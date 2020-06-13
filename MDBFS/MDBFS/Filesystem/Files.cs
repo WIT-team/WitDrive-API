@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using MDBFS.Exceptions;
 using MDBFS.Filesystem.AccessControl.Models;
 using MDBFS.FileSystem.BinaryStorage;
+using MDBFS.FileSystem.BinaryStorage.Models;
 using MDBFS.Filesystem.Models;
 using MDBFS.Filesystem.Streams;
 using MDBFS.Misc;
@@ -17,12 +18,13 @@ namespace MDBFS.Filesystem
     {
         private readonly IMongoCollection<Element> _elements;
         private readonly BinaryStorageClient _binaryStorage;
+        private NamedReaderWriterLock _nrwl;
 
         public Files(IMongoCollection<Element> elements, int binaryStorageBufferLength = 1024, int chunkSize = 1048576)
         {
             _elements = elements;
-            var rwLock = new NamedReaderWriterLock();
-            _binaryStorage = new BinaryStorageClient(rwLock, elements.Database, binaryStorageBufferLength, chunkSize);
+            _nrwl = new NamedReaderWriterLock();
+            _binaryStorage = new BinaryStorageClient(_nrwl, elements.Database, binaryStorageBufferLength, chunkSize);
             var tmp0 = _binaryStorage.CleanUpErrors();
             foreach (var map in tmp0) _elements.DeleteOne(x => x.ID == map.ID);
         }
@@ -33,9 +35,11 @@ namespace MDBFS.Filesystem
             var nDupSearch = _elements.Find(x => x.ParentID == parentId && x.Name == name).ToList();
             string validName = null;
             var count = 0;
+            var tmp0 = name.Contains('.')?  name.Substring(0, name.LastIndexOf('.')):"";
+            var tmp1 = name.Contains('.') ? name.Substring(name.LastIndexOf('.'), name.Length - name.LastIndexOf('.')):"";
             while (nDupSearch.Any())
             {
-                validName = $"{name}({count})";
+                validName = name.Contains('.') ? $"{tmp0}({count}){tmp1}" : $"{name}({count})";
                 // ReSharper disable once AccessToModifiedClosure
                 nDupSearch = _elements.Find(x => x.ParentID == parentId && x.Name == validName).ToList();
                 count++;
@@ -67,7 +71,7 @@ namespace MDBFS.Filesystem
                 elem.ID = stream.Id;
                 stream.Write(data, 0, data.Length);
                 stream.Flush();
-                elem.Metadata.Add(nameof(EMatadataKeys.Length), stream.Length);
+                elem.Metadata.Add(nameof(EMetadataKeys.Length), stream.Length);
             }
 
             _elements.InsertOne(elem);
@@ -76,14 +80,15 @@ namespace MDBFS.Filesystem
 
         public async Task<Element> CreateAsync(string parentId, string name, byte[] data)
         {
-            var elemSearch =(await  _elements.FindAsync(x => x.ID == parentId && x.Removed == false)).ToList();
+            var elemSearch = (await _elements.FindAsync(x => x.ID == parentId && x.Removed == false)).ToList();
             if (elemSearch.Count == 0) return null; //parent does not exist
-            var elem =await PrepareElementAsync(parentId, name);
+            var elem = await PrepareElementAsync(parentId, name);
             await using (var stream = await _binaryStorage.OpenUploadStreamAsync())
             {
                 elem.ID = stream.Id;
                 await stream.WriteAsync(data, 0, data.Length);
-                elem.Metadata.Add(nameof(EMatadataKeys.Length), stream.Length);
+                await stream.FlushAsync();
+                elem.Metadata.Add(nameof(EMetadataKeys.Length), stream.Length);
             }
 
             await _elements.InsertOneAsync(elem);
@@ -93,14 +98,16 @@ namespace MDBFS.Filesystem
         private async Task<Element> PrepareElementAsync(string parentId, string name)
         {
             // ReSharper disable once AccessToModifiedClosure
-            var nDupSearch =(await  _elements.FindAsync(x => x.ParentID == parentId && x.Name == name)).ToList();
+            var nDupSearch = (await _elements.FindAsync(x => x.ParentID == parentId && x.Name == name)).ToList();
             string validName = null;
             var count = 0;
+            var tmp0 = name.Contains('.') ? name.Substring(0, name.LastIndexOf('.')) : "";
+            var tmp1 = name.Contains('.') ? name.Substring(name.LastIndexOf('.'), name.Length - name.LastIndexOf('.')) : "";
             while (nDupSearch.Any())
             {
-                validName = $"{name}({count})";
+                validName = name.Contains('.') ? $"{tmp0}({count}){tmp1}" : $"{name}({count})";
                 // ReSharper disable once AccessToModifiedClosure
-                nDupSearch =(await _elements.FindAsync(x => x.ParentID == parentId && x.Name == validName)).ToList();
+                nDupSearch = (await _elements.FindAsync(x => x.ParentID == parentId && x.Name == validName)).ToList();
                 count++;
             }
 
@@ -127,19 +134,19 @@ namespace MDBFS.Filesystem
             var elem = PrepareElement(parentId, name);
             var id = _binaryStorage.UploadFromStream(stream);
             elem.ID = id;
-            elem.Metadata.Add(nameof(EMatadataKeys.Length), stream.Length);
+            elem.Metadata.Add(nameof(EMetadataKeys.Length), stream.Length);
             _elements.InsertOne(elem);
             return elem;
         }
 
         public async Task<Element> CreateAsync(string parentId, string name, Stream stream, bool streamSupportsAsync)
         {
-            var elemSearch =(await  _elements.FindAsync(x => x.ID == parentId && x.Removed == false)).ToList();
+            var elemSearch = (await _elements.FindAsync(x => x.ID == parentId && x.Removed == false)).ToList();
             if (!elemSearch.Any()) return null; //parent does not exist
             var elem = await PrepareElementAsync(parentId, name);
             var (id, _) = await _binaryStorage.UploadFromStreamAsync(stream, streamSupportsAsync);
             elem.ID = id;
-            elem.Metadata.Add(nameof(EMatadataKeys.Length), stream.Length);
+            elem.Metadata.Add(nameof(EMetadataKeys.Length), stream.Length);
             await _elements.InsertOneAsync(elem);
             return elem;
         }
@@ -148,25 +155,29 @@ namespace MDBFS.Filesystem
         {
             return new FileUploadStream(_binaryStorage.OpenUploadStream(), _elements,
                 Element.Create(null, parentId, 1, name,
-                    new Dictionary<string, object> {{nameof(EMatadataKeys.Length), 0L}}, null));
+                    new Dictionary<string, object> { { nameof(EMetadataKeys.Length), 0L } }, null));
         }
 
         public async Task<FileUploadStream> OpenFileUploadStreamAsync(string parentId, string name)
         {
             return new FileUploadStream(await _binaryStorage.OpenUploadStreamAsync(), _elements,
                 Element.Create(null, parentId, 1, name,
-                    new Dictionary<string, object> {{nameof(EMatadataKeys.Length), 0L}}, null));
+                    new Dictionary<string, object> { { nameof(EMetadataKeys.Length), 0L } }, null));
         }
 
         public Element Get(string id)
         {
+            var lId = _nrwl.AcquireReaderLock($"{nameof(Files)}.{id}");
             var elemSearch = _elements.Find(x => x.ID == id).ToList();
+            _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
             return !elemSearch.Any() ? null : elemSearch.First();
         }
 
         public async Task<Element> GetAsync(string id)
         {
+            var lId = await _nrwl.AcquireReaderLockAsync($"{nameof(Files)}.{id}");
             var elemSearch = (await _elements.FindAsync(x => x.ID == id)).ToList();
+            await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
             return elemSearch.Count == 0 ? null : elemSearch.First();
         }
 
@@ -182,10 +193,14 @@ namespace MDBFS.Filesystem
 
         public Element Remove(string id, bool permanently)
         {
+            var lId = _nrwl.AcquireWriterLock($"{nameof(Files)}.{id}");
             Element f = null;
             if (permanently)
             {
                 _elements.FindOneAndDelete(x => x.ID == id);
+                var lId2 = _nrwl.AcquireWriterLock($"{nameof(ChunkMap)}.{id}");
+                _binaryStorage._maps.UpdateOne(x => x.ID == id, Builders<ChunkMap>.Update.Set(x => x.Removed, true));
+                _nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId2);
             }
             else
             {
@@ -200,8 +215,7 @@ namespace MDBFS.Filesystem
                     {
                         // ReSharper disable once AccessToModifiedClosure
                         var parentSearch = _elements.Find(x => x.ID == e.ParentID).ToList();
-                        if (!parentSearch.Any())
-                            throw new MdbfsElementDoesNotExistException("Parent element missing");
+
                         e = parentSearch.First();
                         originalLocationNames = e.Name + '/' + originalLocationNames;
                         originalLocationIDs = e.ID + '/' + originalLocationIDs;
@@ -210,24 +224,29 @@ namespace MDBFS.Filesystem
                     f.Opened = deleted;
                     f.Modified = deleted;
                     f.Removed = true;
-                    f.Metadata[nameof(EMatadataKeys.PathNames)] = originalLocationNames;
-                    f.Metadata[nameof(EMatadataKeys.PathIDs)] = originalLocationIDs;
-                    f.Metadata[nameof(EMatadataKeys.Deleted)] = deleted;
+                    f.Metadata[nameof(EMetadataKeys.PathNames)] = originalLocationNames;
+                    f.Metadata[nameof(EMetadataKeys.PathIDs)] = originalLocationIDs;
+                    f.Metadata[nameof(EMetadataKeys.Deleted)] = deleted;
                     _elements.FindOneAndReplace(x => x.ID == id, f);
                 }
             }
 
+            _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
             return f;
         }
 
         public async Task<Element> RemoveAsync(string id, bool permanently)
         {
+            var lId = await _nrwl.AcquireWriterLockAsync($"{nameof(Files)}.{id}");
             Element f = null;
             try
             {
                 if (permanently)
                 {
                     await _elements.FindOneAndDeleteAsync(x => x.ID == id);
+                    var lId2 = await _nrwl.AcquireWriterLockAsync($"{nameof(ChunkMap)}.{id}");
+                    await _binaryStorage._maps.UpdateOneAsync(x => x.ID == id, Builders<ChunkMap>.Update.Set(x => x.Removed, true));
+                    await _nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId2);
                 }
                 else
                 {
@@ -242,7 +261,11 @@ namespace MDBFS.Filesystem
                         {
                             var parentSearch = (await _elements.FindAsync(x => x.ID == e.ParentID)).ToList();
                             if (!parentSearch.Any())
-                                throw new MdbfsElementDoesNotExistException(nameof(id));
+                            {
+
+                                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                                throw new MdbfsElementNotFoundException(nameof(id));
+                            }
                             e = parentSearch.First();
                             originalLocationNames = e.Name + '/' + originalLocationNames;
                             originalLocationIDs = e.ID + '/' + originalLocationIDs;
@@ -251,25 +274,32 @@ namespace MDBFS.Filesystem
                         f.Opened = deleted;
                         f.Modified = deleted;
                         f.Removed = true;
-                        f.Metadata[nameof(EMatadataKeys.PathNames)] = originalLocationNames;
-                        f.Metadata[nameof(EMatadataKeys.PathIDs)] = originalLocationIDs;
-                        f.Metadata[nameof(EMatadataKeys.Deleted)] = deleted;
+                        f.Metadata[nameof(EMetadataKeys.PathNames)] = originalLocationNames;
+                        f.Metadata[nameof(EMetadataKeys.PathIDs)] = originalLocationIDs;
+                        f.Metadata[nameof(EMetadataKeys.Deleted)] = deleted;
                         await _elements.FindOneAndReplaceAsync(x => x.ID == id, f);
                     }
                 }
             }
             catch (Exception)
             {
-                //throw;
+                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
             }
 
+            await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
             return f;
         }
 
         public Element Restore(string id)
         {
+            var lId = _nrwl.AcquireWriterLock($"{nameof(Files)}.{id}");
             var elemSearch = _elements.Find(x => x.ID == id && x.Removed).ToList();
-            if (elemSearch.Count == 0) return null; //element not found
+            if (elemSearch.Count == 0)
+            {
+                _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
+                return null;
+            } //element not found
+
             var element = elemSearch.First();
 
             var alterSearch = _elements.Find(x =>
@@ -278,8 +308,8 @@ namespace MDBFS.Filesystem
                 element.Name = $"{element.Name}_restored_{DateTime.Now:yyyy_MM_dd_H:mm:ss:fff}";
 
             var originalLocationNames =
-                (string) element.Metadata[nameof(EMatadataKeys.PathNames)];
-            var originalLocationIDs = (string) element.Metadata[nameof(EMatadataKeys.PathIDs)];
+                (string)element.Metadata[nameof(EMetadataKeys.PathNames)];
+            var originalLocationIDs = (string)element.Metadata[nameof(EMetadataKeys.PathIDs)];
             var names = originalLocationNames.Trim().Split('/');
             var ids = originalLocationIDs.Trim().Split('/');
             var pId = "";
@@ -318,26 +348,36 @@ namespace MDBFS.Filesystem
 
             element.Removed = false;
             if (pId != "") element.ParentID = pId;
-            element.Metadata.Remove(nameof(EMatadataKeys.PathNames));
-            element.Metadata.Remove(nameof(EMatadataKeys.PathIDs));
-            element.Metadata.Remove(nameof(EMatadataKeys.Deleted));
+            element.Metadata.Remove(nameof(EMetadataKeys.PathNames));
+            element.Metadata.Remove(nameof(EMetadataKeys.PathIDs));
+            element.Metadata.Remove(nameof(EMetadataKeys.Deleted));
             _elements.FindOneAndReplace(x => x.ID == id, element);
+            _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
 
             return element;
         }
 
         public async Task<Element> RestoreAsync(string id)
         {
+            var lId = await _nrwl.AcquireWriterLockAsync($"{nameof(Files)}.{id}");
             Element f = null;
             try
             {
                 var elemSearch = (await _elements.FindAsync(x => x.ID == id)).ToList();
-                if (elemSearch.Count == 0) return null; //element not found
+                if (elemSearch.Count == 0)
+                {
+                    await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                    return null;
+                } //element not found
                 f = elemSearch.First();
-                if (f.Removed == false) return null; // element is not removed
+                if (f.Removed == false)
+                {
+                    await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                    return null;
+                } // element is not removed
 
-                var originalLocationNames = (string) f.Metadata[nameof(EMatadataKeys.PathNames)];
-                var originalLocationIDs = (string) f.Metadata[nameof(EMatadataKeys.PathIDs)];
+                var originalLocationNames = (string)f.Metadata[nameof(EMetadataKeys.PathNames)];
+                var originalLocationIDs = (string)f.Metadata[nameof(EMetadataKeys.PathIDs)];
                 var names = originalLocationNames.Trim().Split('/');
                 var ids = originalLocationIDs.Trim().Split('/');
                 var pId = "";
@@ -371,30 +411,39 @@ namespace MDBFS.Filesystem
 
                 f.Removed = false;
                 if (pId != "") f.ParentID = pId;
-                f.Metadata.Remove(nameof(EMatadataKeys.PathNames));
-                f.Metadata.Remove(nameof(EMatadataKeys.PathIDs));
-                f.Metadata.Remove(nameof(EMatadataKeys.Deleted));
+                f.Metadata.Remove(nameof(EMetadataKeys.PathNames));
+                f.Metadata.Remove(nameof(EMetadataKeys.PathIDs));
+                f.Metadata.Remove(nameof(EMetadataKeys.Deleted));
                 await _elements.FindOneAndReplaceAsync(x => x.ID == id, f);
             }
             catch (Exception)
             {
-                //throw;
+                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
             }
-
+            await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
             return f;
         }
 
         public Element Copy(string id, string parentId)
         {
+            var lId = _nrwl.AcquireWriterLock($"{nameof(Files)}.{id}");
             if (!_elements.Find(x => x.ID == parentId && x.Removed == false).Any()) return null; //parent not found
             var eleSearch = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
-            if (eleSearch.Count == 0) return null; //element not found
+            if (eleSearch.Count == 0)
+            {
+                _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
+                return null;
+            } //element not found
             var mElem = eleSearch.First();
 
             _elements.UpdateOne(x => x.ID == id, Builders<Element>.Update.Set(x => x.Opened, DateTime.Now));
 
             var nId = _binaryStorage.Duplicate(id);
-            if (nId == null) return null;
+            if (nId == null)
+            {
+                _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
+                return null;
+            }
             var date = DateTime.Now;
             var nName = mElem.Name;
 
@@ -433,20 +482,34 @@ namespace MDBFS.Filesystem
                 Metadata = mElem.Metadata
             };
             _elements.InsertOne(f);
+            _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
             return f;
         }
 
         public async Task<Element> CopyAsync(string id, string parentId)
         {
-            if (!await (await _elements.FindAsync(x => x.ID == parentId && x.Removed == false)).AnyAsync()) return null; //parent not found
+            var lId = await _nrwl.AcquireWriterLockAsync($"{nameof(Files)}.{id}");
+            if (!await (await _elements.FindAsync(x => x.ID == parentId && x.Removed == false)).AnyAsync())
+            {
+                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                return null;
+            } //parent not found
             var eleSearch = (await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
-            if (!eleSearch.Any()) return null; //element not found
+            if (!eleSearch.Any())
+            {
+                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                return null;
+            } //element not found
             var mElem = eleSearch.First();
 
             await _elements.UpdateOneAsync(x => x.ID == id, Builders<Element>.Update.Set(x => x.Opened, DateTime.Now));
 
             var nId = await _binaryStorage.DuplicateAsync(id);
-            if (nId == null) return null;
+            if (nId == null)
+            {
+                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                return null;
+            }
             var date = DateTime.Now;
 
             var nName = mElem.Name;
@@ -483,119 +546,153 @@ namespace MDBFS.Filesystem
                 Metadata = mElem.Metadata
             };
             await _elements.InsertOneAsync(f);
+            await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
             return f;
         }
 
         public Element Move(string id, string nParentId)
         {
+            var lId = _nrwl.AcquireWriterLock($"{nameof(Files)}.{id}");
             var parSearch = _elements.Find(x => x.ID == nParentId && x.Removed == false).ToList();
-            if (!parSearch.Any()) return null; //parent not found
+            if (!parSearch.Any())
+            {
+                _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
+                return null;
+            } //parent not found
 
             var elemSearch = _elements.Find(x => x.ID == id && x.Removed == false);
-            if (!elemSearch.Any()) return null; //element not found
+            if (!elemSearch.Any())
+            {
+                _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
+                return null;
+            } //element not found
 
             var f = elemSearch.First();
             f.Opened = f.Modified = DateTime.Now;
             f.ParentID = nParentId;
             _elements.FindOneAndReplace(x => x.ID == id, f);
+            _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
             return f;
         }
 
         public async Task<Element> MoveAsync(string id, string nParentId)
         {
+            var lId = await _nrwl.AcquireWriterLockAsync($"{nameof(Files)}.{id}");
             var parSearch = (await _elements.FindAsync(x => x.ID == nParentId && x.Removed == false)).ToList();
-            if (!parSearch.Any()) return null; //parent not found
+            if (!parSearch.Any())
+            {
+                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                return null;
+            }//parent not found
 
             var elemSearch = (await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
-            if (!elemSearch.Any()) return null; //element not found
+            if (!elemSearch.Any())
+            {
+                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                return null;
+            } //element not found
 
             var f = elemSearch.First();
             f.Opened = f.Modified = DateTime.Now;
             f.ParentID = nParentId;
             await _elements.FindOneAndReplaceAsync(x => x.ID == id, f);
+            await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
             return f;
         }
 
         public Element Rename(string id, string newName)
         {
+            var lId = _nrwl.AcquireWriterLock($"{nameof(Files)}.{id}");
             var search = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any())
+            {
+                _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
+                return null;
+            }
             var elem = search.First();
             elem.Name = newName;
             _elements.UpdateOne(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, newName));
+            _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
             return elem;
         }
-
-        public Element AddMetadata(string id, string fieldName, object fieldValue)
+        public Element SetCustomMetadata(string id, string fieldName, object fieldValue)
         {
-            if (((EMatadataKeys[]) Enum.GetValues(typeof(EMatadataKeys))).Any(name =>
-                fieldName == name.ToString())) return null;
-            if (((EAccesControlFields[]) Enum.GetValues(typeof(EAccesControlFields))).Any(name =>
-                fieldName == name.ToString())) return null;
+            var lId = _nrwl.AcquireWriterLock($"{nameof(Files)}.{id}");
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
-            var elem = search.First();
-            elem.Metadata[fieldName] = fieldValue;
-            _elements.FindOneAndReplace(x => x.ID == id, elem);
-            return elem;
+            if (!search.Any())
+            {
+                _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
+                return null;
+            }
+            _elements.UpdateOne(x => x.ID == id,
+                Builders<Element>.Update.Set(x => x.CustomMetadata[fieldName], fieldValue));
+            List<Element> search2;
+            _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
+            return (search2 = _elements.Find(x => x.ID == id).ToList()).Any() ? search2.First() : null;
         }
 
-        public Element RemoveMetadata(string id, string fieldName)
+        public Element RemoveCustomMetadata(string id, string fieldName)
         {
-            if (((EMatadataKeys[]) Enum.GetValues(typeof(EMatadataKeys))).Any(name =>
-                fieldName == name.ToString())) return null;
-            if (((EAccesControlFields[]) Enum.GetValues(typeof(EAccesControlFields))).Any(name =>
-                fieldName == name.ToString())) return null;
+            var lId = _nrwl.AcquireWriterLock($"{nameof(Files)}.{id}");
             var search = _elements.Find(x => x.ID == id).ToList();
-            if (!search.Any()) return null;
-            var elem = search.First();
-            if (!elem.Metadata.ContainsKey(fieldName)) return elem;
-
-            elem.Metadata.Remove(fieldName);
-            _elements.FindOneAndReplace(x => x.ID == id, elem);
-
-            return elem;
+            if (!search.Any())
+            {
+                _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
+                return null;
+            }
+            _elements.UpdateOne(x => x.ID == id,
+                Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));
+            List<Element> search2;
+            _nrwl.ReleaseLock($"{nameof(Files)}.{id}", lId);
+            return (search2 = _elements.Find(x => x.ID == id).ToList()).Any() ? search2.First() : null;
         }
-       
-        public async  Task<Element> RenameAsync(string id, string newName)
+
+        public async Task<Element> RenameAsync(string id, string newName)
         {
+            var lId = await _nrwl.AcquireWriterLockAsync($"{nameof(Files)}.{id}");
             var search = (await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
-            if (!search.Any()) return null;
+            if (!search.Any())
+            {
+                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                return null;
+            }
             var elem = search.First();
             elem.Name = newName;
             await _elements.UpdateOneAsync(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, newName));
+            await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
             return elem;
         }
 
-        public async Task<Element> AddMetadataAsync(string id, string fieldName, object fieldValue)
+        public async Task<Element> SetCustomMetadataAsync(string id, string fieldName, object fieldValue)
         {
-            if (((EMatadataKeys[]) Enum.GetValues(typeof(EMatadataKeys))).Any(name =>
-                fieldName == name.ToString())) return null;
-            if (((EAccesControlFields[]) Enum.GetValues(typeof(EAccesControlFields))).Any(name =>
-                fieldName == name.ToString())) return null;
-            var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
-            if (!search.Any()) return null;
-            var elem = search.First();
-            elem.Metadata[fieldName] = fieldValue;
-            await _elements.FindOneAndReplaceAsync(x => x.ID == id, elem);
-            return elem;
+            var lId = await _nrwl.AcquireWriterLockAsync($"{nameof(Files)}.{id}");
+            var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
+            if (!search.Any())
+            {
+                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                return null;
+            }
+            await _elements.UpdateOneAsync(x => x.ID == id,
+                Builders<Element>.Update.Set(x => x.CustomMetadata[fieldName], fieldValue));
+            List<Element> search2;
+            await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+            return (search2 = (await _elements.FindAsync(x => x.ID == id)).ToList()).Any() ? search2.First() : null;
         }
 
-        public async Task<Element> RemoveMetadataAsync(string id, string fieldName)
+        public async Task<Element> RemoveCustomMetadataAsync(string id, string fieldName)
         {
-            if (((EMatadataKeys[]) Enum.GetValues(typeof(EMatadataKeys))).Any(name =>
-                fieldName == name.ToString())) return null;
-            if (((EAccesControlFields[]) Enum.GetValues(typeof(EAccesControlFields))).Any(name =>
-                fieldName == name.ToString())) return null;
-            var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
-            if (!search.Any()) return null;
-            var elem = search.First();
-            if (!elem.Metadata.ContainsKey(fieldName)) return elem;
-
-            elem.Metadata.Remove(fieldName);
-            await _elements.FindOneAndReplaceAsync(x => x.ID == id, elem);
-
-            return elem;
+            var lId = await _nrwl.AcquireWriterLockAsync($"{nameof(Files)}.{id}");
+            var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
+            if (!search.Any())
+            {
+                await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+                return null;
+            }
+            await _elements.UpdateOneAsync(x => x.ID == id,
+                Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));
+            List<Element> search2;
+            await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
+            return (search2 = (await _elements.FindAsync(x => x.ID == id)).ToList()).Any() ? search2.First() : null;
         }
     }
 }

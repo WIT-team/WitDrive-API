@@ -11,6 +11,11 @@ using MDBFS_Lib;
 using System.Net.Http;
 using System.Net;
 using Microsoft.Extensions.Configuration;
+using MDBFS.Filesystem;
+using MDBFS.Misc;
+using Newtonsoft.Json.Linq;
+using WitDrive.Infrastructure.Extensions;
+using WitDrive.Models;
 
 namespace WitDrive.Controllers
 {
@@ -21,30 +26,16 @@ namespace WitDrive.Controllers
     {
         private readonly IConfiguration config;
         private readonly IFilesService filesService;
-        private readonly FileRepository repo;
+        private readonly FileSystemClient fsc;
+        private readonly long space;
         public FilesController(IFilesService filesService, IConfiguration config)
         {
             this.config = config;
             this.filesService = filesService;
-            this.repo = new FileRepository(config.GetConnectionString("MongoDbConnection"));
-        }
-
-        [HttpGet("root")]
-        public async Task<IActionResult> GetRootDir(int userId)
-        {
-            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-            {
-                return Unauthorized();
-            }
-
-            var res = await repo.GetRootDirectoryAsync(Convert.ToString(userId));
-
-            if (res.success)
-            {
-                return Ok(res.result);
-            }
-
-            return BadRequest("Failed to retrieve root data");
+            var mongoClient = new MongoDB.Driver.MongoClient(config.GetConnectionString("MongoDbConnection"));
+            var database = mongoClient.GetDatabase(nameof(WitDrive));
+            this.fsc = new FileSystemClient(database, chunkSize: 32768);
+            this.space = long.Parse(config.GetSection("DiskSpace").GetSection("Space").Value);
         }
 
         [HttpPost("upload")]
@@ -54,18 +45,39 @@ namespace WitDrive.Controllers
             {
                 return Unauthorized();
             }
-
-            var res = await repo.UploadFileAsyncReturnCode(Convert.ToString(userId), directoryId, file.FileName, filesService.ConvertToByteArray(file));
-
-            if (res.success)
+        
+            try
             {
+                byte[] data = filesService.ConvertToByteArray(file);
+
+                if (await fsc.AccessControl.CalculateDiskUsageAsync(userId.ToString()) + data.Length > space)
+                {
+                    return Unauthorized("Not enough space");
+                }
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(directoryId, userId.ToString(), false, true, true, false))
+                {
+                    return Unauthorized();
+                }
+
+                var f = await fsc.Files.CreateAsync(directoryId, file.FileName, data);
+
+                await fsc.AccessControl.CreateAccessControlAsync(f.ID, userId.ToString());
+                var r1 = await fsc.Directories.SetCustomMetadataAsync(f.ID, "Shared", false);
+                var r2 = await fsc.Directories.SetCustomMetadataAsync(f.ID, "ShareID", String.Empty);
+
                 return Ok();
             }
-
-            return BadRequest("Failed to upload file");
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return NotFound("Directory not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to upload file");
+            }
         }
 
-        [HttpGet("download/{fileId}")]
+        [HttpGet("{fileId}")]
         public async Task<IActionResult> FileDownload(int userId, string fileId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
@@ -73,73 +85,145 @@ namespace WitDrive.Controllers
                 return Unauthorized();
             }
 
-            MDBFS_Lib.Util.AsyncResult<KeyValuePair<string, byte[]>?> res = await repo.DownloadFileAsync(Convert.ToString(userId), fileId);
-
-            if (res.success)
+            try
             {
-                string fileName = res.result.Value.Key;
-                byte[] data = res.result.Value.Value;
-                return File(data, MimeTypes.GetMimeType(fileName), fileName);
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, false, false))
+                {
+                    return Unauthorized();
+                }
+
+                byte[] file = new byte[0];
+                using (var stream = await fsc.Files.OpenFileDownloadStreamAsync(fileId))
+                {
+                    byte[] buffer = new byte[4096];
+                    int count = await stream.ReadAsync(buffer, 0, buffer.Length);
+                    while (count > 0)
+                    {
+                        file = file.Append(buffer.SubArray(0, count));
+                        count = await stream.ReadAsync(buffer, 0, buffer.Length);
+                    }
+                }
+
+                var fileInfo = await fsc.Files.GetAsync(fileId);
+
+                return File(file, MimeTypes.GetMimeType(fileInfo.Name), fileInfo.Name);
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
+            {
+                return NotFound("File not found");
             }
 
-            return BadRequest("Failed to download file");
         }
 
-        //[HttpPost("download/{fileId}")]
-        //public async Task<IActionResult> FileDownloadTwo(int userId, string fileId)
-        //{
-        //    if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-        //    {
-        //        return Unauthorized();
-        //    }
-
-        //    MDBFS_Lib.Util.AsyncResult<KeyValuePair<string, byte[]>?> res = await repo.DownloadFileAsync(Convert.ToString(userId), fileId);
-
-        //    if (res.success)
-        //    {
-        //        string fileName = res.result.Value.Key;
-        //        byte[] data = res.result.Value.Value;
-        //        return File(data, MimeTypes.GetMimeType(fileName), fileName);
-        //    }
-
-        //    return BadRequest("Failed to download file");
-        //}
-
-
-        [HttpPatch("share/{fileId}")]
-        public async Task<IActionResult> EnableFileSharing(int userId, string fileId)
+        [HttpPatch("rename")]
+        public async Task<IActionResult> RenameFile(int userId,[FromQuery] string fileId, [FromQuery] string name)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
                 return Unauthorized();
             }
 
-            var res = await repo.EnableFileSharingAsync(Convert.ToString(userId), fileId);
+            try
+            {                       
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, true, false))
+                {
+                    return Unauthorized();
+                }
 
-            if (res.success)
-            {
-                return Ok(res.result);
-            }
+                var tmpDeb = await fsc.Files.RenameAsync(fileId, name);
 
-            return BadRequest("Failed to share file");
-        }
-
-        [HttpPatch("disable-sharing/{fileId}")]
-        public async Task<IActionResult> DisableFileSharing(int userId, string fileId)
-        {
-            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-            {
-                return Unauthorized();
-            }
-
-            var res = await repo.DisableFileSharingAsyncReturnCode(Convert.ToString(userId), fileId);
-
-            if (res.success)
-            {
                 return Ok();
             }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return NotFound("File not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to change file name");
+            }
 
-            return BadRequest("Failed to disable file sharing");
+        }
+
+        [HttpPatch("move")]
+        public async Task<IActionResult> MoveFile(int userId, [FromQuery] string fileId, [FromQuery] string dirId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+            if (dirId == fsc.Directories.Root)
+            {
+                return BadRequest("Invalid operation");
+            }
+            try
+            {
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, true, false))
+                {
+                    return Unauthorized();
+                }
+
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(dirId, userId.ToString(), false, true, true, true))
+                {
+                    return Unauthorized();
+                }
+
+                var tmpDeb = await fsc.Files.MoveAsync(fileId, dirId);
+                return Ok();
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return BadRequest("File not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to move file");
+            }
+        }
+
+        [HttpPut("copy")]
+        public async Task<IActionResult> CopyFile(int userId, [FromQuery] string fileId, [FromQuery] string dirId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+            if (dirId == fsc.Directories.Root)
+            {
+                return BadRequest("Invalid operation");
+            }
+            try
+            {
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, true, false))
+                {
+                    return Unauthorized();
+                }
+
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(dirId, userId.ToString(), false, true, true, true))
+                {
+                    return Unauthorized();
+                }
+
+                var file = await fsc.Files.GetAsync(fileId);
+                var length = (long)file.Metadata[nameof(EMetadataKeys.Length)];
+
+                if (await fsc.AccessControl.CalculateDiskUsageAsync(userId.ToString()) + length > space)
+                {
+                    return Unauthorized("Not enough space");
+                }
+
+                var deb = await fsc.Files.CopyAsync(fileId, dirId);
+
+                return Ok();
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return BadRequest("File not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to move file");
+            }
         }
 
         [HttpDelete("{fileId}")]
@@ -149,51 +233,25 @@ namespace WitDrive.Controllers
             {
                 return Unauthorized();
             }
-
-            var res = await repo.DeleteFileAsyncReturnCode(Convert.ToString(userId), fileId);
-
-            if (res.success)
+            try
             {
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, false, true, false))
+                {
+                    return Unauthorized();
+                }
+
+                await fsc.Files.RemoveAsync(fileId, true); //todo
+
                 return Ok();
             }
-
-            return BadRequest("Failed to delete file");
-        }
-
-        [HttpGet("get-shared-list")]
-        public async Task<IActionResult> GetSharedList(int userId)
-        {
-            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
             {
-                return Unauthorized();
+                return NotFound("Unknown file id");
             }
-
-            var res = await repo.GetSharedLisAsyncReturnCode(Convert.ToString(userId));
-
-            if (res.success)
+            catch (Exception e)
             {
-                return Ok(res.result);
+                return BadRequest("Failed to delete file");
             }
-
-            return BadRequest("Failed to get shared list");
-        }
-
-        [HttpGet("get-shared-file/{shareId}")]
-        public async Task<IActionResult> GetSharedFile(int userId, string shareId)
-        {
-            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
-            {
-                return Unauthorized();
-            }
-
-            var res = await repo.GetFileFromShareAsync(Convert.ToString(userId), shareId);
-
-            if (res.success)
-            {
-                return Ok(res.result);
-            }
-
-            return BadRequest("Failed to retrieve file info");
         }
 
     }

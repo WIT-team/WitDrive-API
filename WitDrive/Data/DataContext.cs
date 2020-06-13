@@ -13,6 +13,7 @@ namespace WitDrive.Data
         UserRole, IdentityUserLogin<int>, IdentityRoleClaim<int>, IdentityUserToken<int>>
     {
         public DataContext(DbContextOptions<DataContext> options) : base(options) { }
+        public DbSet<ShareMap> ShareLinks { get; set; }
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -33,6 +34,11 @@ namespace WitDrive.Data
                 .IsRequired();
             });
             #endregion
+
+            builder.Entity<ShareMap>(map =>
+            {
+                map.HasKey(k => new { k.ShareId });
+            });
         }
     }
 }

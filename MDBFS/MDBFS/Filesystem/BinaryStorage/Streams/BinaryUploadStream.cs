@@ -19,6 +19,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
         public string Id => _map.ID;
 
         private readonly NamedReaderWriterLock _nrwl;
+        private string _nrwlID;//todo: add to constructor
         private readonly IMongoCollection<Chunk> _chunks;
         private readonly IMongoCollection<ChunkMap> _maps;
         private ChunkMap _map;
@@ -28,8 +29,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
         public static (bool success, BinaryUploadStream stream) Open(IMongoCollection<ChunkMap> maps,
             IMongoCollection<Chunk> chunks, int maxChunkLenght, string id, NamedReaderWriterLock namedReaderWriterLock)
         {
-            if (id != null) {}
-            var (success, map) = CreateNewElement(maps, id);
+            var (success, map) = CreateNewElement(maps, id,namedReaderWriterLock);
             if (!success)
             {
                 return (false, null);
@@ -40,6 +40,8 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             {
                 _map = map
             };
+            stream._nrwlID = namedReaderWriterLock.AcquireWriterLock($"{nameof(Chunk)}.{map.ID}");
+
             return (true, stream);
         }
 
@@ -47,7 +49,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             IMongoCollection<Chunk> chunks, int maxChunkLenght, string id, NamedReaderWriterLock namedReaderWriterLock)
         {
             if (id != null) {}
-            var (success, map) = await CreateNewElementAsync(maps, id);
+            var (success, map) = await CreateNewElementAsync(maps, id,namedReaderWriterLock);
             if (!success)
             {
                 return (false, null);
@@ -57,13 +59,14 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             {
                 _map = map
             };
-            await namedReaderWriterLock.AcquireWriterLockAsync(map.ID);
+            stream._nrwlID = await namedReaderWriterLock.AcquireWriterLockAsync($"{nameof(Chunk)}.{map.ID}");
             return (true, stream);
         }
 
-        private static (bool success, ChunkMap map) CreateNewElement(IMongoCollection<ChunkMap> maps, string id)
+        private static (bool success, ChunkMap map) CreateNewElement(IMongoCollection<ChunkMap> maps, string id,NamedReaderWriterLock nrwl)
         {
             var map = new ChunkMap {ID = id, ChunksIDs = new List<string>(), Length = 0};
+            var lId = nrwl.AcquireReaderLock($"{nameof(ChunkMap)}.{id}");
             using var session = maps.Database.Client.StartSession();
             session.StartTransaction();
             try
@@ -77,6 +80,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
                     else
                     {
                         session.AbortTransaction();
+                        nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}",lId);
                         return (false, null);
                     }
                 }
@@ -84,42 +88,51 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
                 maps.InsertOne(map);
 
                 session.CommitTransaction();
+                nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId);
                 return (true, map);
             }
             catch
             {
-                // ignored
+                nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId);
             }
 
             session.AbortTransaction();
+            nrwl.ReleaseLock($"{nameof(ChunkMap)}.{id}", lId);
             return (false, null);
         }
 
         private static async Task<(bool success, ChunkMap map)> CreateNewElementAsync(IMongoCollection<ChunkMap> maps,
-            string id)
+            string id, NamedReaderWriterLock nrwl)
         {
             var map = new ChunkMap {ID = id, ChunksIDs = new List<string>(), Length = 0};
+            var lId = await nrwl.AcquireReaderLockAsync($"{nameof(ChunkMap)}.{id}");
             using var session = await maps.Database.Client.StartSessionAsync();
             session.StartTransaction();
             try
             {
                 if (id != null)
                 {
-                    if (!(await maps.FindAsync(x => x.ID == id)).Any()) map.ID = id;
-                    else return (false, null);
+                    if (!await (await maps.FindAsync(x => x.ID == id)).AnyAsync()) map.ID = id;
+                    else
+                    {
+                        await nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId);
+                        return (false, null);
+                    }
                 }
 
                 await maps.InsertOneAsync(map);
 
-                session.CommitTransaction();
+                await session.CommitTransactionAsync();
+                await nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId);
                 return (true, map);
             }
             catch (Exception)
             {
-                // ignored
+                await nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId);
             }
 
-            session.AbortTransaction();
+            await session.AbortTransactionAsync();
+            await nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{id}", lId);
             return (false, null);
         }
 
@@ -227,20 +240,23 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             if (_writeBuffer != null)
             {
                 SaveBytesInDb(_writeBuffer);
+                _nrwl.ReleaseLock($"{nameof(Chunk)}.{_map.ID}",_nrwlID);
                 _writeBuffer = null;
+                string lId = _nrwl.AcquireWriterLock($"{nameof(ChunkMap)}.{_map.ID}");
                 _maps.UpdateOne(x => x.ID == _map.ID, Builders<ChunkMap>.Update.Set(x => x.Removed, false));
-                _nrwl.ReleaseWriterLock(_map.ID);
+                _nrwl.ReleaseLock($"{nameof(ChunkMap)}.{_map.ID}",lId);
             }
         }
-
         public new async Task FlushAsync()
         {
             if (_writeBuffer != null)
             {
                 await SaveBytesInDbAsync(_writeBuffer);
+                await _nrwl.ReleaseLockAsync($"{nameof(Chunk)}.{_map.ID}", _nrwlID);
                 _writeBuffer = null;
+                string lId = await _nrwl.AcquireWriterLockAsync($"{nameof(ChunkMap)}.{_map.ID}");
                 await _maps.UpdateOneAsync(x => x.ID == _map.ID, Builders<ChunkMap>.Update.Set(x => x.Removed, false));
-                _nrwl.ReleaseWriterLock(_map.ID);
+                await _nrwl.ReleaseLockAsync($"{nameof(ChunkMap)}.{_map.ID}", lId);
             }
         }
 
@@ -258,6 +274,7 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
 
 #pragma warning disable IDE0060
 #pragma warning disable CS8632
+
         public override int ReadTimeout
         {
             get => throw new NotSupportedException();
@@ -276,134 +293,134 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             set => throw new NotSupportedException();
         }
 
-        public new static Stream Synchronized(Stream stream)
-        {
-            throw new NotSupportedException();
-        }
+        //public new static Stream Synchronized(Stream stream)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback callback,
-            object? state)
-        {
-            throw new NotSupportedException();
-        }
+        //public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback callback,
+        //    object? state)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override IAsyncResult BeginWrite(byte[] buffer, int offset, int count, AsyncCallback callback,
-            object? state)
-        {
-            throw new NotSupportedException();
-        }
+        //public override IAsyncResult BeginWrite(byte[] buffer, int offset, int count, AsyncCallback callback,
+        //    object? state)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override void CopyTo(Stream destination, int bufferSize)
-        {
-            throw new NotSupportedException();
-        }
+        //public override void CopyTo(Stream destination, int bufferSize)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public new void CopyTo(Stream destination)
-        {
-            throw new NotSupportedException();
-        }
+        //public new void CopyTo(Stream destination)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public new Task CopyToAsync(Stream destination, CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
+        //public new Task CopyToAsync(Stream destination, CancellationToken cancellationToken)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public new Task CopyToAsync(Stream destination)
-        {
-            throw new NotSupportedException();
-        }
+        //public new Task CopyToAsync(Stream destination)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public new Task CopyToAsync(Stream destination, int bufferSize)
-        {
-            throw new NotSupportedException();
-        }
+        //public new Task CopyToAsync(Stream destination, int bufferSize)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
+        //public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override ValueTask DisposeAsync()
-        {
-            throw new NotSupportedException();
-        }
+        //public override ValueTask DisposeAsync()
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override int EndRead(IAsyncResult asyncResult)
-        {
-            throw new NotSupportedException();
-        }
+        //public override int EndRead(IAsyncResult asyncResult)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override void EndWrite(IAsyncResult asyncResult)
-        {
-            throw new NotSupportedException();
-        }
+        //public override void EndWrite(IAsyncResult asyncResult)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override Task FlushAsync(CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
+        //public override Task FlushAsync(CancellationToken cancellationToken)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override int Read(Span<byte> buffer)
-        {
-            throw new NotSupportedException();
-        }
+        //public override int Read(Span<byte> buffer)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
+        //public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
+        //public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public new Task<int> ReadAsync(byte[] buffer, int offset, int count)
-        {
-            throw new NotSupportedException();
-        }
+        //public new Task<int> ReadAsync(byte[] buffer, int offset, int count)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override int ReadByte()
-        {
-            throw new NotSupportedException();
-        }
+        //public override int ReadByte()
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override void Write(ReadOnlySpan<byte> buffer)
-        {
-            throw new NotSupportedException();
-        }
+        //public override void Write(ReadOnlySpan<byte> buffer)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            throw new NotSupportedException();
-        }
+        //public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
+        //public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        public override void WriteByte(byte value)
-        {
-            throw new NotSupportedException();
-        }
+        //public override void WriteByte(byte value)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        [Obsolete]
-        protected override WaitHandle CreateWaitHandle()
-        {
-            throw new NotSupportedException();
-        }
+        //[Obsolete]
+        //protected override WaitHandle CreateWaitHandle()
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        protected override void Dispose(bool disposing)
-        {
-            throw new NotSupportedException();
-        }
+        //protected override void Dispose(bool disposing)
+        //{
+        //    throw new NotSupportedException();
+        //}
 
-        [Obsolete]
-        protected override void ObjectInvariant()
-        {
-            throw new NotSupportedException();
-        }
+        //[Obsolete]
+        //protected override void ObjectInvariant()
+        //{
+        //    throw new NotSupportedException();
+        //}
 
         public override long Seek(long offset, SeekOrigin origin)
         {

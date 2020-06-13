@@ -47,7 +47,7 @@ namespace MDBFS.Filesystem
         public Element Create(string parentId, string name)
         {
             var parSearch = _elements.Find(x => x.ID == parentId).ToList();
-            if (!parSearch.Any()) throw new MdbfsElementDoesNotExistException("Parent element not found");
+            if (!parSearch.Any()) throw new MdbfsElementNotFoundException("Parent element not found");
 
 
             var name1 = name;
@@ -132,17 +132,19 @@ namespace MDBFS.Filesystem
 
         public Element Remove(string id, bool permanently)
         {
+            var elemSearch = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
+            if (!elemSearch.Any()) return null; //not found or already removed
+            var element = elemSearch.First();
+
             if (permanently)
             {
                 var subelements = GetSubelements(id);
                 foreach (var subelem in subelements)
                     if (subelem.Type == 2) Remove(subelem.ID, true);
                     else if (subelem.Type == 1) _files.Remove(subelem.ID, true);
+                var tmp = _elements.DeleteOne(x => x.ID == id);
+                return element;
             }
-
-            var elemSearch = _elements.Find(x => x.ID == id && x.Removed == false).ToList();
-            if (!elemSearch.Any()) return null; //not found or already removed
-            var element = elemSearch.First();
 
             if (element.ParentID != null)
             {
@@ -165,7 +167,7 @@ namespace MDBFS.Filesystem
             {
                 var element1 = currElement;
                 var parentSearch = _elements.Find(x => x.ID == element1.ParentID).ToList();
-                if (!parentSearch.Any()) throw new MdbfsElementDoesNotExistException("Parent element missing");
+                if (!parentSearch.Any()) throw new MdbfsElementNotFoundException("Parent element missing");
                 currElement = parentSearch.First();
                 originalLocationNames = currElement.Name + '/' + originalLocationNames;
                 originalLocationIDs = currElement.ID + '/' + originalLocationIDs;
@@ -174,9 +176,9 @@ namespace MDBFS.Filesystem
             element.Opened = deleted;
             element.Modified = deleted;
             element.Removed = true;
-            element.Metadata[nameof(EMatadataKeys.PathNames)] = originalLocationNames;
-            element.Metadata[nameof(EMatadataKeys.PathIDs)] = originalLocationIDs;
-            element.Metadata[nameof(EMatadataKeys.Deleted)] = deleted;
+            element.Metadata[nameof(EMetadataKeys.PathNames)] = originalLocationNames;
+            element.Metadata[nameof(EMetadataKeys.PathIDs)] = originalLocationIDs;
+            element.Metadata[nameof(EMetadataKeys.Deleted)] = deleted;
             _elements.FindOneAndReplace(x => x.ID == id, element);
 
             return element;
@@ -192,8 +194,8 @@ namespace MDBFS.Filesystem
                 x.ParentID == element.ParentID && x.Name == element.Name && x.Removed == false).ToList();
             if (alterSearch.Any())
                 element.Name = string.Format("{0}_restored_{1:yyyy_MM_dd_H:mm:ss:fff}", element.Name, DateTime.Now);
-            var prevIDsStr = (string)element.Metadata[nameof(EMatadataKeys.PathIDs)];
-            var prevNamesStr = (string)element.Metadata[nameof(EMatadataKeys.PathNames)];
+            var prevIDsStr = (string)element.Metadata[nameof(EMetadataKeys.PathIDs)];
+            var prevNamesStr = (string)element.Metadata[nameof(EMetadataKeys.PathNames)];
             var prevIDs = prevIDsStr.Split('/'); //adds one empty string at the end 
             var prevNames = prevNamesStr.Split('/'); //adds one empty string at the end
             var currentElement = element;
@@ -220,9 +222,9 @@ namespace MDBFS.Filesystem
             element.ParentID = currentElement.ID;
             element.Removed = false;
             element.Opened = element.Modified = DateTime.Now;
-            element.Metadata.Remove(nameof(EMatadataKeys.PathIDs));
-            element.Metadata.Remove(nameof(EMatadataKeys.PathNames));
-            element.Metadata.Remove(nameof(EMatadataKeys.Deleted));
+            element.Metadata.Remove(nameof(EMetadataKeys.PathIDs));
+            element.Metadata.Remove(nameof(EMetadataKeys.PathNames));
+            element.Metadata.Remove(nameof(EMetadataKeys.Deleted));
             _elements.FindOneAndReplace(x => x.ID == element.ID, element);
             return element;
         }
@@ -282,7 +284,7 @@ namespace MDBFS.Filesystem
             return elem;
         }
 
-        public Element AddMetadata(string id, string fieldName, object fieldValue)
+        public Element SetCustomMetadata(string id, string fieldName, object fieldValue)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
             if (!search.Any()) return null;
@@ -292,17 +294,14 @@ namespace MDBFS.Filesystem
             return elem;
         }
 
-        public Element RemoveMetadata(string id, string fieldName)
+        public Element RemoveCustomMetadata(string id, string fieldName)
         {
             var search = _elements.Find(x => x.ID == id).ToList();
             if (!search.Any()) return null;
-            var elem = search.First();
-            if (!elem.CustomMetadata.ContainsKey(fieldName)) return elem;
-
-            elem.CustomMetadata.Remove(fieldName);
-            _elements.FindOneAndReplace(x => x.ID == id, elem);
-
-            return elem;
+            _elements.UpdateOne(x => x.ID == id,
+                Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));
+            List<Element> search2;
+            return (search2 = _elements.Find(x => x.ID == id).ToList()).Any() ? search2.First() : null;
         }
         public IEnumerable<Element> Find(string searchRoot, ElementSearchQuery query)
         {
@@ -336,7 +335,7 @@ namespace MDBFS.Filesystem
         public async Task<Element> CreateAsync(string parentId, string name)
         {
             var parSearch = (await _elements.FindAsync(x => x.ID == parentId)).ToList();
-            if (!parSearch.Any()) throw new MdbfsElementDoesNotExistException("Parent element not found");
+            if (!parSearch.Any()) throw new MdbfsElementNotFoundException("Parent element not found");
 
 
             var name1 = name;
@@ -424,9 +423,11 @@ namespace MDBFS.Filesystem
             if (permanently)
             {
                 var subelements = await GetSubelementsAsync(id);
-                foreach (var subElem in subelements)
-                    if (subElem.Type == 2) await RemoveAsync(subElem.ID, true);
-                    else if (subElem.Type == 1) await _files.RemoveAsync(subElem.ID, true);
+                foreach (var subelem in subelements)
+                    if (subelem.Type == 2) await RemoveAsync(subelem.ID, true);
+                    else if (subelem.Type == 1) await _files.RemoveAsync(subelem.ID, true);
+                var tmp = await _elements.DeleteOneAsync(x => x.ID == id);
+                return null;
             }
 
             var elemSearch =(await _elements.FindAsync(x => x.ID == id && x.Removed == false)).ToList();
@@ -454,7 +455,7 @@ namespace MDBFS.Filesystem
             {
                 var element1 = currentElement;
                 var parentSearch =(await _elements.FindAsync(x => x.ID == element1.ParentID)).ToList();
-                if (!parentSearch.Any()) throw new MdbfsElementDoesNotExistException("Parent element missing");
+                if (!parentSearch.Any()) throw new MdbfsElementNotFoundException("Parent element missing");
                 currentElement = parentSearch.First();
                 originalLocationNames = currentElement.Name + '/' + originalLocationNames;
                 originalLocationIDs = currentElement.ID + '/' + originalLocationIDs;
@@ -463,9 +464,9 @@ namespace MDBFS.Filesystem
             element.Opened = deleted;
             element.Modified = deleted;
             element.Removed = true;
-            element.Metadata[nameof(EMatadataKeys.PathNames)] = originalLocationNames;
-            element.Metadata[nameof(EMatadataKeys.PathIDs)] = originalLocationIDs;
-            element.Metadata[nameof(EMatadataKeys.Deleted)] = deleted;
+            element.Metadata[nameof(EMetadataKeys.PathNames)] = originalLocationNames;
+            element.Metadata[nameof(EMetadataKeys.PathIDs)] = originalLocationIDs;
+            element.Metadata[nameof(EMetadataKeys.Deleted)] = deleted;
             await _elements.FindOneAndReplaceAsync(x => x.ID == id, element);
 
             return element;
@@ -481,8 +482,8 @@ namespace MDBFS.Filesystem
                 x.ParentID == element.ParentID && x.Name == element.Name && x.Removed == false)).ToList();
             if (alterSearch.Any())
                 element.Name = $"{element.Name}_restored_{DateTime.Now:yyyy_MM_dd_H:mm:ss:fff}";
-            var prevIDsStr = (string)element.Metadata[nameof(EMatadataKeys.PathIDs)];
-            var prevNamesStr = (string)element.Metadata[nameof(EMatadataKeys.PathNames)];
+            var prevIDsStr = (string)element.Metadata[nameof(EMetadataKeys.PathIDs)];
+            var prevNamesStr = (string)element.Metadata[nameof(EMetadataKeys.PathNames)];
             var prevIDs = prevIDsStr.Split('/'); //adds one empty string at the end 
             var prevNames = prevNamesStr.Split('/'); //adds one empty string at the end
             var currentElement = element;
@@ -509,9 +510,9 @@ namespace MDBFS.Filesystem
             element.ParentID = currentElement.ID;
             element.Removed = false;
             element.Opened = element.Modified = DateTime.Now;
-            element.Metadata.Remove(nameof(EMatadataKeys.PathIDs));
-            element.Metadata.Remove(nameof(EMatadataKeys.PathNames));
-            element.Metadata.Remove(nameof(EMatadataKeys.Deleted));
+            element.Metadata.Remove(nameof(EMetadataKeys.PathIDs));
+            element.Metadata.Remove(nameof(EMetadataKeys.PathNames));
+            element.Metadata.Remove(nameof(EMetadataKeys.Deleted));
             await _elements.FindOneAndReplaceAsync(x => x.ID == element.ID, element);
             return element;
         }
@@ -576,7 +577,7 @@ namespace MDBFS.Filesystem
             return elem;
         }
 
-        public async Task<Element> AddMetadataAsync(string id, string fieldName, object fieldValue)
+        public async Task<Element> SetCustomMetadataAsync(string id, string fieldName, object fieldValue)
         {
             var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
             if (!search.Any()) return null;
@@ -586,17 +587,14 @@ namespace MDBFS.Filesystem
             return elem;
         }
 
-        public async Task<Element> RemoveMetadataAsync(string id, string fieldName)
+        public async Task<Element> RemoveCustomMetadataAsync(string id, string fieldName)
         {
             var search =(await  _elements.FindAsync(x => x.ID == id)).ToList();
             if (!search.Any()) return null;
-            var elem = search.First();
-            if (!elem.CustomMetadata.ContainsKey(fieldName)) return elem;
-
-            elem.CustomMetadata.Remove(fieldName);
-            await _elements.FindOneAndReplaceAsync(x => x.ID == id, elem);
-
-            return elem;
+            await _elements.UpdateOneAsync(x => x.ID == id,
+                Builders<Element>.Update.PullFilter(x => x.CustomMetadata, x => x.Key == fieldName));
+            List<Element> search2;
+            return (search2 =(await _elements.FindAsync(x => x.ID == id)).ToList()).Any() ? search2.First() : null;
         }
         public async Task<IEnumerable<Element>> FindAsync(string searchRoot, ElementSearchQuery query)
         {
@@ -680,7 +678,7 @@ namespace MDBFS.Filesystem
             if (query.Created != null) result.AddRange(GenerateForModified(query.Created));
             if (query.Removed != null) result.AddRange(GenerateForRemoved(query.Removed));
             if (query.Metadata != null) result.AddRange(GenerateForMetadata(query.Metadata));
-            if (query.CustomMetadata != null) result.AddRange(GenerateForMetadata(query.Metadata));
+            if (query.CustomMetadata != null) result.AddRange(GenerateForCustomMetadata(query.CustomMetadata));
             return result;
         }
 
@@ -851,6 +849,37 @@ namespace MDBFS.Filesystem
                         break;
                     case ESearchCondition.Gte:
                         filters.Add(Builders<Element>.Filter.Gte(x => x.Metadata[fieldName], value));
+                        break;
+                }
+
+            return filters;
+        }
+
+        private static IEnumerable<FilterDefinition<Element>> GenerateForCustomMetadata(
+           IEnumerable<(string fieldName, ESearchCondition condition, object value)> cond)
+        {
+            var filters = new List<FilterDefinition<Element>>();
+
+            foreach (var (fieldName, condition, value) in cond)
+                switch (condition)
+                {
+                    case ESearchCondition.Eq:
+                        filters.Add(Builders<Element>.Filter.Eq(x => x.CustomMetadata[fieldName], value));
+                        break;
+                    case ESearchCondition.Ne:
+                        filters.Add(Builders<Element>.Filter.Ne(x => x.CustomMetadata[fieldName], value));
+                        break;
+                    case ESearchCondition.Lt:
+                        filters.Add(Builders<Element>.Filter.Lt(x => x.CustomMetadata[fieldName], value));
+                        break;
+                    case ESearchCondition.Lte:
+                        filters.Add(Builders<Element>.Filter.Lte(x => x.CustomMetadata[fieldName], value));
+                        break;
+                    case ESearchCondition.Gt:
+                        filters.Add(Builders<Element>.Filter.Gt(x => x.CustomMetadata[fieldName], value));
+                        break;
+                    case ESearchCondition.Gte:
+                        filters.Add(Builders<Element>.Filter.Gte(x => x.CustomMetadata[fieldName], value));
                         break;
                 }
 

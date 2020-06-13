@@ -50,6 +50,20 @@ namespace WitDrive.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "ShareLinks",
+                columns: table => new
+                {
+                    ShareId = table.Column<string>(nullable: false),
+                    ElementId = table.Column<string>(nullable: true),
+                    Type = table.Column<byte>(nullable: false),
+                    Active = table.Column<bool>(nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ShareLinks", x => x.ShareId);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "AspNetRoleClaims",
                 columns: table => new
                 {
@@ -209,6 +223,9 @@ namespace WitDrive.Migrations
 
             migrationBuilder.DropTable(
                 name: "AspNetUserTokens");
+
+            migrationBuilder.DropTable(
+                name: "ShareLinks");
 
             migrationBuilder.DropTable(
                 name: "AspNetRoles");

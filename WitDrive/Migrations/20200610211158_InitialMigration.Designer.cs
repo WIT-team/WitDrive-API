@@ -10,7 +10,7 @@ using WitDrive.Data;
 namespace WitDrive.Migrations
 {
     [DbContext(typeof(DataContext))]
-    [Migration("20200418171309_InitialMigration")]
+    [Migration("20200610211158_InitialMigration")]
     partial class InitialMigration
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -133,6 +133,25 @@ namespace WitDrive.Migrations
                         .HasName("RoleNameIndex");
 
                     b.ToTable("AspNetRoles");
+                });
+
+            modelBuilder.Entity("WitDrive.Models.ShareMap", b =>
+                {
+                    b.Property<string>("ShareId")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ElementId")
+                        .HasColumnType("text");
+
+                    b.Property<byte>("Type")
+                        .HasColumnType("smallint");
+
+                    b.HasKey("ShareId");
+
+                    b.ToTable("ShareLinks");
                 });
 
             modelBuilder.Entity("WitDrive.Models.User", b =>

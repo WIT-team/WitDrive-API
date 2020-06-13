@@ -12,116 +12,104 @@ namespace MDBFS.Misc
             _rwls = new Dictionary<string, CustomReaderWriterLock>();
         }
 
-        public void AcquireReaderLock(string id)
+        public string AcquireReaderLock(string name)
         {
             CustomReaderWriterLock crwl;
             lock (this)
             {
-                if (_rwls.ContainsKey(id))
+                if (_rwls.ContainsKey(name))
                 {
-                    crwl = _rwls[id];
+                    crwl = _rwls[name];
                 }
                 else
                 {
                     crwl = new CustomReaderWriterLock();
-                    _rwls[id] = crwl;
+                    _rwls[name] = crwl;
                 }
             }
 
-            crwl.AcquireReaderLock();
+            return crwl.AcquireReaderLock();
         }
 
-        public void AcquireWriterLock(string id)
+        public string AcquireWriterLock(string name)
         {
             CustomReaderWriterLock crwl;
             lock (this)
             {
-                if (_rwls.ContainsKey(id))
+                if (_rwls.ContainsKey(name))
                 {
-                    crwl = _rwls[id];
+                    crwl = _rwls[name];
                 }
                 else
                 {
                     crwl = new CustomReaderWriterLock();
-                    _rwls[id] = crwl;
+                    _rwls[name] = crwl;
                 }
             }
 
-            crwl.AcquireWriterLock();
+            return crwl.AcquireWriterLock();
         }
 
-        public void ReleaseReaderLock(string id)
+        public void ReleaseLock(string name, string id)
         {
             CustomReaderWriterLock crwl;
             lock (this)
             {
-                crwl = _rwls[id];
-                if (crwl.UsersCounter - 1 <= 0) _rwls.Remove(id);
+                crwl = _rwls[name];
+                if (crwl.Counter - 1 <= 0) _rwls.Remove(name);
             }
 
-            crwl.ReleaseReaderLock();
+            crwl.ReleaseLock(id);
         }
 
-        public void ReleaseWriterLock(string id)
+        public async Task<string> AcquireReaderLockAsync(string name)
         {
             CustomReaderWriterLock crwl;
             lock (this)
             {
-                crwl = _rwls[id];
-                if (crwl.UsersCounter - 1 <= 0) _rwls.Remove(id);
-            }
-
-            crwl.ReleaseWriterLock();
-        }
-        public async Task AcquireReaderLockAsync(string id)
-        {
-            CustomReaderWriterLock crwl;
-            lock (this)
-            {
-                if (_rwls.ContainsKey(id))
+                if (_rwls.ContainsKey(name))
                 {
-                    crwl = _rwls[id];
+                    crwl = _rwls[name];
                 }
                 else
                 {
                     crwl = new CustomReaderWriterLock();
-                    _rwls[id] = crwl;
+                    _rwls[name] = crwl;
                 }
             }
 
-            await crwl.AcquireReaderLockAsync();
+            return await crwl.AcquireReaderLockAsync();
         }
 
-        public async Task AcquireWriterLockAsync(string id)
+        public async Task<string> AcquireWriterLockAsync(string name)
         {
             CustomReaderWriterLock crwl;
             lock (this)
             {
-                if (_rwls.ContainsKey(id))
+                if (_rwls.ContainsKey(name))
                 {
-                    crwl = _rwls[id];
+                    crwl = _rwls[name];
                 }
                 else
                 {
                     crwl = new CustomReaderWriterLock();
-                    _rwls[id] = crwl;
+                    _rwls[name] = crwl;
                 }
             }
 
-            await crwl.AcquireWriterLockAsync();
+            return await crwl.AcquireWriterLockAsync();
         }
 
-        public async Task ReleaseReaderLockAsync(string id)
+        public async Task ReleaseLockAsync(string name, string id)
         {
             CustomReaderWriterLock crwl;
             lock (this)
             {
-                crwl = _rwls[id];
-                if (crwl.UsersCounter - 1 <= 0) _rwls.Remove(id);
+                crwl = _rwls[name];
+                if (crwl.Counter - 1 <= 0) _rwls.Remove(name);
             }
 
-            await crwl.ReleaseReaderLockAsync();
+            await crwl.ReleaseLockAsync(id);
         }
-
     }
 }
