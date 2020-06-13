@@ -39,7 +39,7 @@ namespace WitDrive.Controllers
         }
 
         [HttpPatch("enable")]
-        public async Task<IActionResult> EnableFileSharing(int userId, [FromQuery] string elementId)
+        public async Task<IActionResult> EnableElementSharing(int userId, [FromQuery] string elementId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
@@ -60,6 +60,10 @@ namespace WitDrive.Controllers
                     var subElems = await fsc.Directories.GetSubelementsAsync(fileInfo.ID);
                     foreach (var item in subElems)
                     {
+                        if (item.Type == 2)
+                        {
+                            continue;
+                        }
                         var itemShareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
                         var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, itemShareId, true, true, true);
 
@@ -94,20 +98,20 @@ namespace WitDrive.Controllers
                     return Ok(shareId);
                 }
 
-                return BadRequest("Failed to share file");
+                return BadRequest("Failed to share element");
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
             {
-                return NotFound("Unknown file id");
+                return NotFound("Unknown element id");
             }
             catch (Exception)
             {
-                return BadRequest("Failed to share file");
+                return BadRequest("Failed to share element");
             }
         }
 
         [HttpPatch("disable")]
-        public async Task<IActionResult> DisableFileSharing(int userId, [FromQuery] string elementId)
+        public async Task<IActionResult> DisableElementSharing(int userId, [FromQuery] string elementId)
         {
             if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
             {
@@ -133,15 +137,8 @@ namespace WitDrive.Controllers
                         var cstMta = (string)item.CustomMetadata["ShareID"];
                         var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, cstMta, false, false, false);
 
-                        ShareMap tmp = new ShareMap()
-                        {
-                            ElementId = item.ID,
-                            Type = item.Type,
-                            ShareId = cstMta,
-                            Active = false
-                        };
-
-                        filesService.Update<ShareMap>(tmp);
+                        var shrMapDir = await filesService.GetByShareId(cstMta);
+                        filesService.Delete<ShareMap>(shrMapDir);
 
                         await fsc.Files.SetCustomMetadataAsync(item.ID, "ShareID", String.Empty);
                         await fsc.Files.SetCustomMetadataAsync(item.ID, "Shared", false);
@@ -150,31 +147,24 @@ namespace WitDrive.Controllers
                 await fsc.Files.SetCustomMetadataAsync(elementId, "ShareID", String.Empty);
                 await fsc.Files.SetCustomMetadataAsync(elementId, "Shared", false);
 
+                var shrMapFile = await filesService.GetByShareId(shrId);
+                filesService.Delete<ShareMap>(shrMapFile);
 
-                ShareMap f = new ShareMap()
-                {
-                    ElementId = fileInfo.ID,
-                    Type = fileInfo.Type,
-                    ShareId = shrId,
-                    Active = false
-                };
-
-                filesService.Delete<ShareMap>(f);
 
                 if (await filesService.SaveAll())
                 {
                     return Ok();
                 }
 
-                return BadRequest("Failed to disable file sharing");
+                return BadRequest("Failed to disable element sharing");
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
             {
-                return BadRequest("Unknown file id");
+                return BadRequest("Unknown element id");
             }
             catch (Exception)
             {
-                return BadRequest("Failed to disable file sharing");
+                return BadRequest("Failed to disable element sharing");
             }
         }
 
