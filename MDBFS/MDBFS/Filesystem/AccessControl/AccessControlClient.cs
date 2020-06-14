@@ -334,7 +334,7 @@ namespace MDBFS.Filesystem.AccessControl
 
         public async Task<User> CreateUserAsync(string username, bool admin)
         {
-            var search =(await _users.FindAsync(x => x.Username == username))
+            var search = (await _users.FindAsync(x => x.Username == username))
                 .ToList();
             if (search.Any()) throw new MdbfsUserNotFoundException();
 
@@ -354,12 +354,12 @@ namespace MDBFS.Filesystem.AccessControl
 
         public async Task<User> GetUserAsync(string username)
         {
-            var search =(await _users.FindAsync(x => x.Username == username)).ToList();
+            var search = (await _users.FindAsync(x => x.Username == username)).ToList();
             return !search.Any() ? null : search.First();
         }
         public async Task<Element> CreateAccessControlAsync(string id, string username)
         {
-            var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
+            var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
             if (!search.Any()) throw new MdbfsElementNotFoundException();
             var element = search.First();
             element.Metadata[nameof(OwnerId)] = username;
@@ -373,13 +373,13 @@ namespace MDBFS.Filesystem.AccessControl
 
         public async Task<Element> GetAccessControlAsync(string id)
         {
-            var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
+            var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
             return !search.Any() ? null : search.First();
         }
 
         public async Task<Element> RemoveAccessControlAsync(string id)
         {
-            var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
+            var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
             if (!search.Any()) throw new MdbfsElementNotFoundException();
             var element = search.First();
             if (element.Metadata.ContainsKey(nameof(OwnerId)))
@@ -412,7 +412,7 @@ namespace MDBFS.Filesystem.AccessControl
         private async Task<List<Element>> GetRemovedAsync(string id)
         {
             var res = new List<Element>();
-            var search =(await _elements.FindAsync(x => x.ParentID == id)).ToList();
+            var search = (await _elements.FindAsync(x => x.ParentID == id)).ToList();
             foreach (var elem in search)
             {
                 if (elem.Removed) res.Add(elem);
@@ -468,7 +468,7 @@ namespace MDBFS.Filesystem.AccessControl
             await _groups.UpdateManyAsync(filterGroups, updateGroups);
             //await _elements.UpdateManyAsync(filter, update);
             await _directories.RemoveAsync(usr.RootDirectory, true);
-            await _users.DeleteOneAsync(username);
+            await _users.DeleteOneAsync(x=>x.Username == username);
         }
 
         public async Task<Group> AddUserToGroupAsync(string groupName, string username)
@@ -552,9 +552,9 @@ namespace MDBFS.Filesystem.AccessControl
 
         public async Task<bool> CheckPermissionsWithUsernameAsync(string id, string username, bool changeRights, bool read, bool write, bool execute)
         {
-            var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
+            var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
             if (!search.Any()) throw new Exception("Element does not exist");
-            var searchUsr =(await _users.FindAsync(x => x.Username == username)).ToList();
+            var searchUsr = (await _users.FindAsync(x => x.Username == username)).ToList();
             if (!searchUsr.Any()) throw new Exception("User does not exist");
             var elem = search.First();
             var user = searchUsr.First();
@@ -589,7 +589,7 @@ namespace MDBFS.Filesystem.AccessControl
         }
         public async Task<bool> CheckPermissionsWithTokenAsync(string id, string token, bool changeRights, bool read, bool write, bool execute)
         {
-            var search =(await _elements.FindAsync(x => x.ID == id)).ToList();
+            var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
             if (!search.Any()) throw new Exception("Element does not exist");
             var elem = search.First();
             var elemTokens = (Dictionary<string, byte>)elem.Metadata[nameof(Tokens)];
@@ -614,7 +614,7 @@ namespace MDBFS.Filesystem.AccessControl
 
         public async Task<long> CalculateDiskUsageAsync(string username)
         {
-            var search =(await _elements.FindAsync(Builders<Element>.Filter.Where(x => x.Type == 1 && ((string)x.Metadata[nameof(OwnerId)]) == username))).ToList();
+            var search = (await _elements.FindAsync(Builders<Element>.Filter.Where(x => x.Type == 1 && ((string)x.Metadata[nameof(OwnerId)]) == username))).ToList();
             if (!search.Any()) return 0;
             long sum = 0;
             foreach (var e in search)

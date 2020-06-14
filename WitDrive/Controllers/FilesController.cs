@@ -60,7 +60,11 @@ namespace WitDrive.Controllers
                 }
 
                 var f = await fsc.Files.CreateAsync(directoryId, file.FileName, data);
-
+                var parent = await fsc.AccessControl.GetAccessControlAsync(directoryId);
+                if((bool)parent.CustomMetadata["Shared"])
+                {
+                    await fsc.AccessControl.AuthorizeTokenAsync(f.ID, (string)parent.CustomMetadata["ShareID"], true, true, true);
+                }
                 await fsc.AccessControl.CreateAccessControlAsync(f.ID, userId.ToString());
                 var r1 = await fsc.Directories.SetCustomMetadataAsync(f.ID, "Shared", false);
                 var r2 = await fsc.Directories.SetCustomMetadataAsync(f.ID, "ShareID", String.Empty);
@@ -90,23 +94,9 @@ namespace WitDrive.Controllers
                 if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(fileId, userId.ToString(), false, true, false, false))
                 {
                     return Unauthorized();
-                }
-
-                byte[] file = new byte[0];
-                using (var stream = await fsc.Files.OpenFileDownloadStreamAsync(fileId))
-                {
-                    byte[] buffer = new byte[4096];
-                    int count = await stream.ReadAsync(buffer, 0, buffer.Length);
-                    while (count > 0)
-                    {
-                        file = file.Append(buffer.SubArray(0, count));
-                        count = await stream.ReadAsync(buffer, 0, buffer.Length);
-                    }
-                }
-
-                var fileInfo = await fsc.Files.GetAsync(fileId);
-
-                return File(file, MimeTypes.GetMimeType(fileInfo.Name), fileInfo.Name);
+                }              
+                var (bytes, elem) = fsc.Files.Download(fileId);
+                return File(bytes, MimeTypes.GetMimeType(elem.Name), elem.Name);
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
             {
@@ -168,7 +158,12 @@ namespace WitDrive.Controllers
                     return Unauthorized();
                 }
 
-                var tmpDeb = await fsc.Files.MoveAsync(fileId, dirId);
+                var fileNew = await fsc.Files.MoveAsync(fileId, dirId);
+                var parent = await fsc.AccessControl.GetAccessControlAsync(fileNew.ParentID);
+                if ((bool)parent.CustomMetadata["Shared"])
+                {
+                    await fsc.AccessControl.AuthorizeTokenAsync(fileNew.ID, (string)parent.CustomMetadata["ShareID"], true, true, true);
+                }
                 return Ok();
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
@@ -212,9 +207,13 @@ namespace WitDrive.Controllers
                     return Unauthorized("Not enough space");
                 }
 
-                var deb = await fsc.Files.CopyAsync(fileId, dirId);
-
-                return Ok();
+                var fileNew = await fsc.Files.CopyAsync(fileId, dirId);
+                var parent = await fsc.AccessControl.GetAccessControlAsync(fileNew.ParentID);
+                if ((bool)parent.CustomMetadata["Shared"])
+                {
+                    await fsc.AccessControl.AuthorizeTokenAsync(fileNew.ID, (string)parent.CustomMetadata["ShareID"], true, true, true);
+                }
+                return Ok(fileNew.FileToJson());
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
             {

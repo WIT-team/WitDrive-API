@@ -29,6 +29,27 @@ namespace MDBFS.Filesystem
             foreach (var map in tmp0) _elements.DeleteOne(x => x.ID == map.ID);
         }
 
+        public (byte[] data, Element file) Download(string id)
+        {
+            if (id == null) throw new ArgumentNullException(nameof(id));
+            var search = _elements.Find(x => x.ID == id).ToList();
+            if (search.Count == 0) throw new MdbfsElementNotFoundException();
+            var elem = search.First();
+            var searchMap = _binaryStorage._maps.Find(x => x.ID == id).ToList();
+            if (searchMap.Count == 0) throw new Exception("map missing");
+            var map = searchMap.First();
+            var res = new byte[0];
+            foreach (var chId in map.ChunksIDs)
+            {
+                var searchChunk = _binaryStorage._chunks.Find(x => x.ID == chId).ToList();
+                if (searchChunk.Count == 0) throw new Exception("chunk missing");
+                var chunk = searchChunk.First();
+                res = res.Append(chunk.Bytes);
+            }
+
+            return (res, elem);
+        }
+
         public static bool IsNameValid(string name)
         {
             return (!name.Contains('/') && name.Length > 0);
@@ -540,14 +561,14 @@ namespace MDBFS.Filesystem
             if (await _elements.Find(x => x.ParentID == parentId && x.Name == nName).AnyAsync())
             {
                 long counter = 0;
-                var validName = nName.Contains('.') ? $"{tmp0}_Copy{tmp1}" : $"{nName}({nName})";
+                var validName = nName.Contains('.') ? $"{tmp0}_Copy{tmp1}" : $"{nName}_Copy";
                 // ReSharper disable once AccessToModifiedClosure
                 if (await _elements.Find(x => x.ParentID == parentId && x.Name == validName).AnyAsync())
                 {
                     // ReSharper disable once AccessToModifiedClosure
                     while (await _elements.Find(x => x.ParentID == parentId && x.Name == nName).AnyAsync())
                     {
-                        validName = nName.Contains('.') ? $"{tmp0}_Copy({counter}){tmp1}" : $"{nName}({nName})";
+                        validName = nName.Contains('.') ? $"{tmp0}_Copy({counter}){tmp1}" : $"{nName}_Copy({counter})";
                         if (!await _elements.Find(x => x.ParentID == parentId && x.Name == validName).AnyAsync())
                         {
                             nName = validName;

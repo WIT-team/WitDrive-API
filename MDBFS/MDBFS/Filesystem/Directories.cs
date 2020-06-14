@@ -609,18 +609,16 @@ namespace MDBFS.Filesystem
             var element = elemSearch.First();
             var parentId1 = nParentId;
             var parChild =(await _elements.FindAsync(x => x.ParentID == parentId1 && x.Removed == false && x.Name == element.Name)).ToList();
-            var element2 = element;
             if (parChild.Any())
             {
-                element2 = parChild.First();
-                nParentId = element2.ID;
+                nParentId = parChild.First().ID;
             }
             else
             {
                 var name = element.Name;
                 var meta = element.Metadata;
                 var custMeta = element.CustomMetadata;
-                element2 = new Element()
+                var element2 = new Element
                 {
                     Name = name,
                     ParentID = nParentId,
@@ -628,8 +626,8 @@ namespace MDBFS.Filesystem
                     Type = 2,
                     Metadata = meta,
                     CustomMetadata = custMeta,
+                    Opened = element.Created = element.Modified = DateTime.Now
                 };
-                element2.Opened = element2.Created = element2.Modified = DateTime.Now;
 
                 await _elements.InsertOneAsync(element2);
                 nParentId = element2.ID;
@@ -642,7 +640,7 @@ namespace MDBFS.Filesystem
             await _elements.UpdateOneAsync(x => x.ID == nParentId,
                 Builders<Element>.Update.Combine(Builders<Element>.Update.Set(x => x.Opened, date),
                     Builders<Element>.Update.Set(x => x.Modified, date)));
-            copied.Add(element2);
+            copied.Add(element);
             var subelements = await GetSubelementsAsync(element.ID);
             if (!subelements.Any()) return copied;
             foreach (var subelement in subelements)

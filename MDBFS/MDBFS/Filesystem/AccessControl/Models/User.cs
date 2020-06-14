@@ -10,11 +10,6 @@ namespace MDBFS.Filesystem.AccessControl.Models
     }
     public class User
     {
-        public User()
-        {
-            MemberOf = new List<string>();
-            Permissions = new List<string>();
-        }
 
 #pragma warning disable IDE1006
         // ReSharper disable once InconsistentNaming

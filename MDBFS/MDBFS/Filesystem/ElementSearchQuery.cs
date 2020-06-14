@@ -16,6 +16,11 @@ namespace MDBFS.Filesystem
     }
     public class ElementSearchQuery
     {
+        public ElementSearchQuery()
+        {
+            Metadata = new List<(string fieldName, ESearchCondition condition, object value)>();
+            CustomMetadata = new List<(string fieldName, ESearchCondition condition, object value)>();
+        }
         // ReSharper disable once InconsistentNaming
         public string ID { get; set; }
         // ReSharper disable once InconsistentNaming

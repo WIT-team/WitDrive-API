@@ -53,7 +53,6 @@ namespace WitDrive.Controllers
             return Ok();
         }
 
-        [ValidateAntiForgeryToken]
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword(ResetPasswordDto resetPasswordDto)
         {

@@ -162,19 +162,8 @@ namespace WitDrive.Controllers
 
                 if (element.Type == 1)
                 {
-                    byte[] file = new byte[0];
-                    using (var stream = await fsc.Files.OpenFileDownloadStreamAsync(element.ID))
-                    {
-                        byte[] buffer = new byte[4096];
-                        int count = await stream.ReadAsync(buffer, 0, buffer.Length);
-                        while (count > 0)
-                        {
-                            file = file.Append(buffer.SubArray(0, count));
-                            count = await stream.ReadAsync(buffer, 0, buffer.Length);
-                        }
-                    }
-
-                    return File(file, MimeTypes.GetMimeType(element.Name), element.Name);
+                    var (bytes, elem) = fsc.Files.Download(fileId);
+                    return File(bytes, MimeTypes.GetMimeType(elem.Name), elem.Name);
                 }
                 else if (element.Type == 2)
                 {
