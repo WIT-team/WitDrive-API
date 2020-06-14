@@ -25,6 +25,7 @@ namespace WitDrive.Controllers
 {
     [Route("api/[controller]")]
     [AllowAnonymous]
+    [ApiController]
     public class RecoveryController : ControllerBase
     {
         private readonly IEmailSender emailSender;
@@ -46,7 +47,7 @@ namespace WitDrive.Controllers
 
             var code = await userManager.GeneratePasswordResetTokenAsync(user);
 
-            var message = new Message(new string[] { forgotPasswordDto.Email }, "Go to https://localhost:8080/passwordReset and enter your code: ", code);
+            var message = new Message(new string[] { forgotPasswordDto.Email }, "Code to reset your password", $"Go to https://localhost:8080/reset-password and enter your code: {code}");
             await emailSender.SendEmailAsync(message);
 
             return Ok();

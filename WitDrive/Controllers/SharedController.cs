@@ -19,6 +19,7 @@ namespace WitDrive.Controllers
 {
     [Route("api/[controller]")]
     [AllowAnonymous]
+    [ApiController]
     public class SharedController : ControllerBase
     {
         private readonly IConfiguration config;
@@ -88,24 +89,76 @@ namespace WitDrive.Controllers
             }
         }
 
+        //[HttpGet("{shareId}")]
+        //public async Task<IActionResult> DownloadSharedFile(string shareId)
+        //{
+        //    var shareInfo = await filesService.GetByShareId(shareId);
+
+        //    if (shareInfo == null)
+        //    {
+        //        return BadRequest("Failed to retrieve share info");
+        //    }
+
+        //    try
+        //    {
+        //        if (!await fsc.AccessControl.CheckPermissionsWithTokenAsync(shareInfo.ElementId, shareInfo.ShareId, false, true, false, false))
+        //        {
+        //            return Unauthorized();
+        //        }
+
+        //        var element = await fsc.AccessControl.GetAccessControlAsync(shareInfo.ElementId);
+
+        //        if (element.Type == 1)
+        //        {
+        //            byte[] file = new byte[0];
+        //            using (var stream = await fsc.Files.OpenFileDownloadStreamAsync(element.ID))
+        //            {
+        //                byte[] buffer = new byte[4096];
+        //                int count = await stream.ReadAsync(buffer, 0, buffer.Length);
+        //                while (count > 0)
+        //                {
+        //                    file = file.Append(buffer.SubArray(0, count));
+        //                    count = await stream.ReadAsync(buffer, 0, buffer.Length);
+        //                }
+        //            }
+
+        //            return File(file, MimeTypes.GetMimeType(element.Name), element.Name);
+        //        }
+        //        else if(element.Type == 2)
+        //        {
+        //            return BadRequest("Illegal operation");
+        //        }
+        //        else
+        //        {
+        //            throw new Exception("Not possible in this universe");
+        //        }
+        //    }
+        //    catch (MDBFS.Exceptions.MdbfsElementNotFoundException)
+        //    {
+        //        return NotFound("File not found");
+        //    }
+
+        //}
+
         [HttpGet("{shareId}")]
-        public async Task<IActionResult> DownloadSharedFile(string shareId)
+        public async Task<IActionResult> DownloadSharedF(string shareId, [FromQuery] string fileId)
         {
             var shareInfo = await filesService.GetByShareId(shareId);
 
-            if (!shareInfo.Active)
+            if (shareInfo == null)
             {
                 return BadRequest("Failed to retrieve share info");
             }
 
             try
             {
-                if (!await fsc.AccessControl.CheckPermissionsWithTokenAsync(shareInfo.ElementId, shareInfo.ShareId, false, true, false, false))
+
+                if (!await fsc.AccessControl.CheckPermissionsWithTokenAsync(fileId, shareInfo.ShareId, false, true, false, false))
                 {
                     return Unauthorized();
                 }
 
-                var element = await fsc.AccessControl.GetAccessControlAsync(shareInfo.ElementId);
+                var element = await fsc.AccessControl.GetAccessControlAsync(fileId);
 
                 if (element.Type == 1)
                 {
@@ -123,7 +176,7 @@ namespace WitDrive.Controllers
 
                     return File(file, MimeTypes.GetMimeType(element.Name), element.Name);
                 }
-                else if(element.Type == 2)
+                else if (element.Type == 2)
                 {
                     return BadRequest("Illegal operation");
                 }
@@ -136,8 +189,11 @@ namespace WitDrive.Controllers
             {
                 return NotFound("File not found");
             }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to download file");
+            }
 
         }
-
     }
 }

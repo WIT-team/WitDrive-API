@@ -53,7 +53,7 @@ namespace WitDrive.Controllers
                     return Unauthorized();
                 }
                 var shareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-                shareId.Replace("/", "t");
+                shareId = shareId.Replace("/", "t");
                 var fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(elementId, shareId, true, true, true);
 
                 if (fileInfo.Type == 2)
@@ -65,20 +65,10 @@ namespace WitDrive.Controllers
                         {
                             continue;
                         }
-                        var itemShareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-                        itemShareId.Replace("/", "t");
-                        var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, itemShareId, true, true, true);
-
-                        ShareMap tmp0 = new ShareMap();
-                        tmp0.ElementId = item.ID;
-                        tmp0.Type = item.Type;
-                        tmp0.ShareId = itemShareId;
-                        tmp0.Active = true;
-
-                        filesService.Add<ShareMap>(tmp0);
-
-                        await fsc.Files.SetCustomMetadataAsync(item.ID, "ShareID", itemShareId);
-                        await fsc.Files.SetCustomMetadataAsync(item.ID, "Shared", true);
+                     
+                        var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, shareId, true, true, true);
+                        await fsc.Files.SetCustomMetadataAsync(item.ID, "ShareID", String.Empty);
+                        await fsc.Files.SetCustomMetadataAsync(item.ID, "Shared", false);
                     }
                 }
 
@@ -136,11 +126,11 @@ namespace WitDrive.Controllers
                     var subElems = await fsc.Directories.GetSubelementsAsync(fileInfo.ID);
                     foreach (var item in subElems)
                     {
-                        var cstMta = (string)item.CustomMetadata["ShareID"];
-                        var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, cstMta, false, false, false);
-
-                        var shrMapDir = await filesService.GetByShareId(cstMta);
-                        filesService.Delete<ShareMap>(shrMapDir);
+                        if (item.Type == 2)
+                        {
+                            continue;
+                        }
+                        var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, shrId, false, false, false);
 
                         await fsc.Files.SetCustomMetadataAsync(item.ID, "ShareID", String.Empty);
                         await fsc.Files.SetCustomMetadataAsync(item.ID, "Shared", false);
