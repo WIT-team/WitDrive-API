@@ -291,10 +291,12 @@ namespace WitDrive.Controllers
                 {
                     return Unauthorized("Not enough space");
                 }
-
+                
                 var deb = await fsc.Directories.CopyAsync(dirId, dstDirId);
 
-                return Ok();
+                var x = deb.First();
+
+                return Ok(x.DirToJObject(new MDBFS.Filesystem.Models.Element[0]).ToString());
             }
             catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
             {

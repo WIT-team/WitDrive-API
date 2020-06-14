@@ -20,9 +20,9 @@ namespace WitDrive.Infrastructure.Extensions
 
             jObject[nameof(dir.ID)] = dir.ID;
             jObject[nameof(dir.ParentID)] = dir.ParentID;
-            jObject[nameof(dir.Created)] = dir.Created;
-            jObject[nameof(dir.Modified)] = dir.Modified;
-            jObject[nameof(dir.Opened)] = dir.Opened;
+            jObject[nameof(dir.Created)] = dir.Created.ToUniversalTime();
+            jObject[nameof(dir.Modified)] = dir.Modified.ToUniversalTime();
+            jObject[nameof(dir.Opened)] = dir.Opened.ToUniversalTime();
             jObject[nameof(dir.Type)] = dir.Type;
             jObject[nameof(dir.Name)] = dir.Name;
 
@@ -48,9 +48,9 @@ namespace WitDrive.Infrastructure.Extensions
 
             jObject[nameof(file.ID)] = file.ID;
             jObject[nameof(file.ParentID)] = file.ParentID;
-            jObject[nameof(file.Created)] = file.Created;
-            jObject[nameof(file.Modified)] = file.Modified;
-            jObject[nameof(file.Opened)] = file.Opened;
+            jObject[nameof(file.Created)] = file.Created.ToUniversalTime();
+            jObject[nameof(file.Modified)] = file.Modified.ToUniversalTime();
+            jObject[nameof(file.Opened)] = file.Opened.ToUniversalTime();
             jObject[nameof(file.Type)] = file.Type;
             jObject[nameof(file.Name)] = file.Name;
 

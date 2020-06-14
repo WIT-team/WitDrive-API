@@ -53,6 +53,7 @@ namespace WitDrive.Controllers
                     return Unauthorized();
                 }
                 var shareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+                shareId.Replace("/", "t");
                 var fileInfo = await fsc.AccessControl.AuthorizeTokenAsync(elementId, shareId, true, true, true);
 
                 if (fileInfo.Type == 2)
@@ -65,6 +66,7 @@ namespace WitDrive.Controllers
                             continue;
                         }
                         var itemShareId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+                        itemShareId.Replace("/", "t");
                         var itemInfo = await fsc.AccessControl.AuthorizeTokenAsync(item.ID, itemShareId, true, true, true);
 
                         ShareMap tmp0 = new ShareMap();
