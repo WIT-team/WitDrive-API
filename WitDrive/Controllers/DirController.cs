@@ -16,7 +16,7 @@ using MDBFS.Misc;
 using Newtonsoft.Json.Linq;
 using WitDrive.Infrastructure.Extensions;
 using WitDrive.Models;
-
+using WitDrive.Dto;
 
 namespace WitDrive.Controllers
 {
@@ -305,6 +305,41 @@ namespace WitDrive.Controllers
             catch (Exception e)
             {
                 return BadRequest("Failed to copy directory");
+            }
+        }
+
+        [HttpGet("search")]
+        public async Task<IActionResult> SearchInDirectory([FromQuery] string searchRoot, [FromBody] JObject searchQuery, int userId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+            try
+            {
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(searchRoot, userId.ToString(), false, true, false, true))
+                {
+                    return Unauthorized();
+                }
+
+                var search = fsc.Directories.Find(searchRoot, ElementSearchQuery.Deserialize(searchQuery.ToString()));
+                var search2 = fsc.AccessControl.ModerateSearch(userId.ToString(), search);
+                JArray jArray = new JArray();
+
+                foreach (var item in search2)
+                {
+                    jArray.Add(item.ElementToJObject());
+                }
+
+                return Ok(jArray.ToString());
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return BadRequest("Directory not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to retrieve directory data");
             }
         }
     }

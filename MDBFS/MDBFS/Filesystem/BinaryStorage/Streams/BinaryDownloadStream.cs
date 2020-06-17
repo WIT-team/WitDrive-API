@@ -79,6 +79,58 @@ namespace MDBFS.FileSystem.BinaryStorage.Streams
             return (true, stream);
         }
 
+        public byte[] Downoad(string id)
+        {
+            if (id == null) throw new ArgumentNullException(nameof(id));
+            var lId = _nrwl.AcquireReaderLock($"{nameof(Chunk)}.{id}");
+            var searchMap = _maps.Find(x => x.ID == id).ToList();
+            if (searchMap.Count == 0)
+            {
+                _nrwl.ReleaseLock($"{nameof(Chunk)}.{id}", lId);
+                throw new Exception("map missing");
+            }
+            var map = searchMap.First();
+            var res = new byte[0];
+            foreach (var chId in map.ChunksIDs)
+            {
+                var searchChunk = _chunks.Find(x => x.ID == chId).ToList();
+                if (searchChunk.Count == 0)
+                {
+                    _nrwl.ReleaseLock($"{nameof(Chunk)}.{id}", lId);
+                    throw new Exception("chunk missing");
+                }
+                var chunk = searchChunk.First();
+                res = res.Append(chunk.Bytes);
+            }
+            _nrwl.ReleaseLock($"{nameof(Chunk)}.{id}", lId);
+            return res;
+        }
+        public async Task<byte[]> DownoadAsync(string id)
+        {
+            if (id == null) throw new ArgumentNullException(nameof(id));
+            var lId = await _nrwl.AcquireReaderLockAsync($"{nameof(Chunk)}.{id}");
+            var searchMap = (await _maps.FindAsync(x => x.ID == id)).ToList();
+            if (searchMap.Count == 0)
+            {
+                await _nrwl.ReleaseLockAsync($"{nameof(Chunk)}.{id}", lId);
+                throw new Exception("map missing");
+            }
+            var map = searchMap.First();
+            var res = new byte[0];
+            foreach (var chId in map.ChunksIDs)
+            {
+                var searchChunk = (await _chunks.FindAsync(x => x.ID == chId)).ToList();
+                if (searchChunk.Count == 0)
+                {
+                    await _nrwl.ReleaseLockAsync($"{nameof(Chunk)}.{id}", lId);
+                    throw new Exception("chunk missing");
+                }
+                var chunk = searchChunk.First();
+                res = res.Append(chunk.Bytes);
+            }
+            await _nrwl.ReleaseLockAsync($"{nameof(Chunk)}.{id}", lId);
+            return res;
+        }
         protected static (bool success, ChunkMap map) LoadElement(IMongoCollection<ChunkMap> maps, string id, NamedReaderWriterLock nrwl)
         {
             var lId = nrwl.AcquireReaderLock($"{nameof(ChunkMap)}.{id}");

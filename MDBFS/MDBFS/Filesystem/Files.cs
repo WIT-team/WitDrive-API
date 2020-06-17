@@ -35,18 +35,16 @@ namespace MDBFS.Filesystem
             var search = _elements.Find(x => x.ID == id).ToList();
             if (search.Count == 0) throw new MdbfsElementNotFoundException();
             var elem = search.First();
-            var searchMap = _binaryStorage._maps.Find(x => x.ID == id).ToList();
-            if (searchMap.Count == 0) throw new Exception("map missing");
-            var map = searchMap.First();
-            var res = new byte[0];
-            foreach (var chId in map.ChunksIDs)
-            {
-                var searchChunk = _binaryStorage._chunks.Find(x => x.ID == chId).ToList();
-                if (searchChunk.Count == 0) throw new Exception("chunk missing");
-                var chunk = searchChunk.First();
-                res = res.Append(chunk.Bytes);
-            }
-
+            var res = _binaryStorage.Download(id);
+            return (res, elem);
+        }
+        public async Task<(byte[] data, Element file)> DownloadAsync(string id)
+        {
+            if (id == null) throw new ArgumentNullException(nameof(id));
+            var search = (await _elements.FindAsync(x => x.ID == id)).ToList();
+            if (search.Count == 0) throw new MdbfsElementNotFoundException();
+            var elem = search.First();
+            var res = await _binaryStorage.DownloadAsync(id);
             return (res, elem);
         }
 
@@ -718,8 +716,8 @@ namespace MDBFS.Filesystem
                 await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
                 throw new MdbfsElementNotFoundException();
             }
-            var elem = search.First(); string validName = null;
-
+            var elem = search.First(); 
+            string validName = "";
             var nDupSearch = _elements.Find(x => x.ParentID == elem.ParentID && x.Name == nameNew).ToList();
             var count = 0;
             var tmp0 = nameNew.Contains('.') ? nameNew.Substring(0, nameNew.LastIndexOf('.')) : "";
@@ -732,7 +730,7 @@ namespace MDBFS.Filesystem
                 count++;
             }
             elem.Name = validName;
-            await _elements.UpdateOneAsync(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, nameNew));
+            await _elements.UpdateOneAsync(x => x.ID == id, Builders<Element>.Update.Set(x => x.Name, validName));
             await _nrwl.ReleaseLockAsync($"{nameof(Files)}.{id}", lId);
             return elem;
         }
