@@ -342,5 +342,40 @@ namespace WitDrive.Controllers
                 return BadRequest("Failed to retrieve directory data");
             }
         }
+
+        [HttpPost("searchTest")]
+        public async Task<IActionResult> SearchInDirectoryTest([FromQuery] string searchRoot, [FromBody] JObject searchQuery, int userId)
+        {
+            if (userId != int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value))
+            {
+                return Unauthorized();
+            }
+            try
+            {
+                if (!await fsc.AccessControl.CheckPermissionsWithUsernameAsync(searchRoot, userId.ToString(), false, true, false, true))
+                {
+                    return Unauthorized();
+                }
+
+                var search = fsc.Directories.Find(searchRoot, ElementSearchQuery.Deserialize(searchQuery.ToString()));
+                var search2 = fsc.AccessControl.ModerateSearch(userId.ToString(), search);
+                JArray jArray = new JArray();
+
+                foreach (var item in search2)
+                {
+                    jArray.Add(item.ElementToJObject());
+                }
+
+                return Ok(jArray.ToString());
+            }
+            catch (MDBFS.Exceptions.MdbfsElementNotFoundException e)
+            {
+                return BadRequest("Directory not found");
+            }
+            catch (Exception e)
+            {
+                return BadRequest("Failed to retrieve directory data");
+            }
+        }
     }
 }
